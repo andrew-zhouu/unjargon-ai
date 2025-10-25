@@ -24,7 +24,7 @@ export default function HistoryPanel({ chats, activeChatId, onSelectChat, onNewC
       {!collapsed && (
         <>
           <h1 className="text-xl font-geist font-bold mb-4 text-center bg-gradient-to-r from-blue-600 to-purple-500 bg-clip-text text-transparent">
-            unjargn.ai
+            unjargon.ai
           </h1>
 
           <motion.button

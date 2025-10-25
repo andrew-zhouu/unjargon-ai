@@ -186,7 +186,7 @@ export default function HomePage() {
               Understand.
             </span>{' '}
             <span className="bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 bg-clip-text text-transparent">
-              Unjargn.
+              Unjargon.
             </span>
           </h1>
       
