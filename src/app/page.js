@@ -537,23 +537,27 @@ N/A`);
                   </div>
 
                   {/* little arrow */}
-                  <div
-                    className="absolute left-1/2 top-full -translate-x-1/2 mt-[3px]
-                    block
-                    size-[12px] sm:size-[12px]      /* width = height */
-                    aspect-square                    /* enforce 1:1 ratio */
-                    rotate-45 transform-gpu          /* crisp rotation */
-                    bg-slate-900/90
-                    border-r border-b border-white/10
-                    rounded-[1px]
-                    leading-none
-                    "
-                    style={{
-                      transformOrigin: 'center top',
-                      willChange: 'transform',
-                      boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
-                    }}
-                  />
+                  {/* tooltip arrow (SVG) */}
+                  <svg
+                    className="absolute left-1/2 top-full -translate-x-1/2 mt-[3px] block"
+                    width="12" height="12" viewBox="0 0 12 12" preserveAspectRatio="xMidYMid meet"
+                    aria-hidden="true"
+                  >
+                    {/* diamond (rotated square) */}
+                    <rect
+                      x="2" y="2" width="8" height="8"
+                      transform="rotate(45 6 6)"
+                      fill="rgba(15,23,42,0.90)"            /* slate-900/90 */
+                      stroke="rgba(255,255,255,0.10)"        /* border */
+                      strokeWidth="1"
+                      rx="0.75"
+                    />
+                    {/* subtle shadow (optional) */}
+                    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+                      <feDropShadow dx="0" dy="1" stdDeviation="0.6" floodOpacity="0.15" />
+                    </filter>
+                  </svg>
+
                   
 
 
