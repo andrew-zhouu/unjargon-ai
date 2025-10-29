@@ -1,7 +1,9 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { Analytics } from '@vercel/analytics/react';
+import { Analytics } from "@vercel/analytics/react";
+import SiteFooter from "@/components/SiteFooter";
+import TopNav from "@/components/TopNav";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -19,7 +21,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "unjargn.ai",
+  title: "unjargon.ai",
   description: "AI that simplifies the complex.",
 };
 
@@ -29,8 +31,17 @@ export default function RootLayout({ children }) {
       lang="en"
       className={`dark ${inter.variable} ${geistSans.variable} ${geistMono.variable}`}
     >
-      <body className="">
-        {children}
+      <body className="bg-slate-900 min-h-screen flex flex-col text-white">
+        <TopNav />
+        {/* Main page content */}
+        <div className="flex-1 flex flex-col">
+          {children}
+        </div>
+
+        {/* Footer (always at bottom) */}
+        <SiteFooter />
+
+        {/* Analytics */}
         <Analytics />
       </body>
     </html>

@@ -22,7 +22,7 @@ export default function HistoryPanel({
 
   return (
     <div
-      className={`bg-gray-900 text-white p-4 border-3 border-blue-700/60 rounded-lg h-screen overflow-y-auto
+      className={`bg-blue-950/25 text-white p-4 border-3 border-blue-700/60 rounded-lg h-screen overflow-y-auto
                   transition-all duration-300 ease-in-out ${collapsed ? 'w-16' : 'w-64'} relative`}
     >
       <button
