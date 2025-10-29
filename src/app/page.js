@@ -537,21 +537,23 @@ N/A`);
                   </div>
 
                   {/* little arrow */}
-                  {/* Tooltip arrow — pure CSS triangle, never squishes */}
-                  <div
-                    aria-hidden="true"
-                    className="absolute left-1/2 top-full -translate-x-1/2 mt-[8px] pointer-events-none"
-                  >
-                    <div className="relative w-0 h-0 before:content-[''] before:absolute before:left-1/2 before:-translate-x-1/2 
-                                    before:border-l-[8px] before:border-l-transparent
-                                    before:border-r-[8px] before:border-r-transparent
-                                    before:border-t-[8px] before:border-t-slate-900/90
-                                    after:content-[''] after:absolute after:left-1/2 after:-translate-x-1/2
-                                    after:border-l-[9px] after:border-l-transparent
-                                    after:border-r-[9px] after:border-r-transparent
-                                    after:border-t-[9px] after:border-t-white/10
-                                    after:-top-[1px]" />
-                  </div>
+                  {/* Tooltip arrow — diamond (can’t squish on iOS) */}
+<div
+  aria-hidden="true"
+  className="absolute left-1/2 top-full -translate-x-1/2 mt-2 pointer-events-none"
+>
+  <div
+    className="
+      w-3 h-3
+      min-w-[12px] min-h-[12px] max-w-[12px] max-h-[12px]
+      bg-slate-900/90 border border-white/10
+      rotate-45 rounded-[2px] shadow-sm
+      inline-block align-middle
+      shrink-0 grow-0
+      transform-gpu
+    "
+  />
+</div>
 
 
 
