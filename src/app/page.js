@@ -537,37 +537,35 @@ N/A`);
                   </div>
 
                   {/* little arrow */}
-                  {/* tooltip arrow (perfect square diamond, not squished) */}
-                  {/* tooltip arrow – border-triangle, never squishes */}
-                  <div className="relative isolate">
-                    {/* outer hairline (border) */}
-                    <div
-                      aria-hidden="true"
-                      className="
-                        absolute left-1/2 top-full -translate-x-1/2 mt-2
-                        w-0 h-0
-                        border-l-[9px] border-l-transparent
-                        border-r-[9px] border-r-transparent
-                        border-t-[9px] border-t-white/10
-                        pointer-events-none
-                      "
-                    />
-                    {/* inner fill */}
-                    <div
-                      aria-hidden="true"
-                      className="
-                        absolute left-1/2 top-full -translate-x-1/2 mt-[9px]
-                        w-0 h-0
-                        border-l-[8px] border-l-transparent
-                        border-r-[8px] border-r-transparent
-                        border-t-[8px] border-t-slate-900/90
-                        pointer-events-none
-                      "
-                    />
-                  </div>
+                  {/* Arrow: rotated squares (never squishes) */}
+<div
+  aria-hidden="true"
+  className="
+    absolute left-1/2 top-full -translate-x-1/2 mt-2
+    pointer-events-none
+  "
+>
+  <div className="relative w-3 h-3 shrink-0">
+    {/* outer “border” layer */}
+    <div className="absolute inset-0 rotate-45 origin-center bg-white/10" />
+    {/* inner fill, slightly inset to reveal border */}
+    <div className="absolute inset-[1px] rotate-45 origin-center bg-slate-900/90" />
+  </div>
+</div>
+<div
+  role="dialog"
+  aria-label="Unjargon tip"
+  className="
+    absolute bottom-full left-1/2 -translate-x-1/2 mb-3 z-50
+    max-w-xs px-4 py-3 rounded-xl text-sm
+    text-white bg-slate-900/90 backdrop-blur border border-white/10 shadow-lg
+    inline-flex flex-col leading-none shrink-0
+  "
+>
+  {/* ...content... */}
+  {/* ← paste the arrow block right after this content */}
+</div>
 
-
-                  
 
 
                   {/* action row */}
