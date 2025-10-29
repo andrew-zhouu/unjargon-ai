@@ -5,6 +5,25 @@
 @tailwind components;
 @tailwind utilities;
 
+::-webkit-scrollbar {
+  width: 10px; /* thickness of the scrollbar */
+}
+
+::-webkit-scrollbar-track {
+  background: #0f172a; /* track color (behind the thumb) — e.g. slate-900 */
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(to bottom, #3b82f6, #0797b1); /* blue → cyan gradient */
+  border-radius: 10px;
+  border: 2px solid #0f172a; /* matches track for a smooth inset look */
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(to bottom, #2563eb, #02647c); /* darker on hover */
+}
+
 /* Font classes */
 @layer base {
   html {

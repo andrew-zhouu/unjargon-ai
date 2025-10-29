@@ -1,22 +1,41 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import { DotsVerticalIcon } from '@heroicons/react/solid';
 
-export default function HistoryPanel({ chats, activeChatId, onSelectChat, onNewChat, onDeleteChat, onRenameChat }) {
+export default function HistoryPanel({
+  chats, activeChatId, onSelectChat, onNewChat, onDeleteChat, onRenameChat
+}) {
   const [editingChatId, setEditingChatId] = useState(null);
   const [editTitle, setEditTitle] = useState('');
-  const [collapsed, setCollapsed] = useState(false);
+
+  // ✅ Default collapsed on first load; restore last preference afterwards
+  const [collapsed, setCollapsed] = useState(true);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('unjargon_sidebar_collapsed');
+      if (saved !== null) setCollapsed(saved === 'true');
+    } catch {}
+  }, []);
 
   return (
-    <div className={`bg-gray-900 text-white p-4 border border-blue-700/60 rounded-lg h-screen overflow-y-auto transition-all duration-300 ease-in-out ${collapsed ? 'w-16' : 'w-64'} relative`}>
+    <div
+      className={`bg-gray-900 text-white p-4 border-3 border-blue-700/60 rounded-lg h-screen overflow-y-auto
+                  transition-all duration-300 ease-in-out ${collapsed ? 'w-16' : 'w-64'} relative`}
+    >
       <button
-        onClick={() => setCollapsed(!collapsed)}
-        className="flex items-center gap-2 px-3.5 py-1.5 text-base font-medium 
-                  bg-gray-800 hover:bg-gray-700 text-white rounded-lg 
-                  transition duration-200 shadow-sm absolute top-3 right-3"
+        onClick={() =>
+          setCollapsed(prev => {
+            const next = !prev;
+            try { localStorage.setItem('unjargon_sidebar_collapsed', String(next)); } catch {}
+            return next;
+          })
+        }
+        className="flex items-center gap-3 px-3 py-1 text-base font-medium
+                   bg-gray-800 hover:bg-gray-700 text-white rounded-lg
+                   transition duration-200 shadow-sm absolute top-3 right-3 border-2 border-gray-400"
       >
         {collapsed ? '>' : '<'}
       </button>
@@ -31,7 +50,7 @@ export default function HistoryPanel({ chats, activeChatId, onSelectChat, onNewC
             onClick={onNewChat}
             whileTap={{ scale: 0.97 }}
             whileHover={{ opacity: 0.89 }}
-            className="w-full px-3 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg text-sm border border-blue-300 shadow-sm mb-4"
+            className="w-full px-3 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-bold rounded-lg text-sm border-2 border-blue-300 shadow-sm mb-4"
           >
             ➕ Start New Chat
           </motion.button>
@@ -45,7 +64,7 @@ export default function HistoryPanel({ chats, activeChatId, onSelectChat, onNewC
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -4 }}
                   transition={{ duration: 0.25, ease: 'easeInOut' }}
-                  className={`group relative p-3 rounded-lg text-sm transition-all flex flex-col gap-1 shadow-sm border border-gray-600 ${
+                  className={`group relative p-3 rounded-lg text-sm font-semibold transition-all flex flex-col gap-1 shadow-sm border-2 border-gray-600 ${
                     chat.id === activeChatId ? 'bg-blue-600 text-white' : 'bg-gray-800 hover:bg-gray-700'
                   }`}
                 >
@@ -55,15 +74,9 @@ export default function HistoryPanel({ chats, activeChatId, onSelectChat, onNewC
                         <input
                           value={editTitle}
                           onChange={(e) => setEditTitle(e.target.value)}
-                          onBlur={() => {
-                            onRenameChat(chat.id, editTitle);
-                            setEditingChatId(null);
-                          }}
+                          onBlur={() => { onRenameChat(chat.id, editTitle); setEditingChatId(null); }}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              onRenameChat(chat.id, editTitle);
-                              setEditingChatId(null);
-                            }
+                            if (e.key === 'Enter') { onRenameChat(chat.id, editTitle); setEditingChatId(null); }
                           }}
                           className="bg-gray-700 text-white rounded px-2 py-1 w-full"
                           autoFocus
@@ -81,11 +94,8 @@ export default function HistoryPanel({ chats, activeChatId, onSelectChat, onNewC
                           <MenuItem>
                             {({ active }) => (
                               <button
-                                onClick={() => {
-                                  setEditTitle(chat.title);
-                                  setEditingChatId(chat.id);
-                                }}
-                                className={`block w-full text-left px-3 py-1 text-sm ${active ? 'bg-gray-700' : ''}`}
+                                onClick={() => { setEditTitle(chat.title); setEditingChatId(chat.id); }}
+                                className={`block w-full text-left px-3 py-1 text-sm font-semibold ${active ? 'bg-gray-700' : ''}`}
                               >
                                 ✏️ Rename
                               </button>
@@ -95,7 +105,7 @@ export default function HistoryPanel({ chats, activeChatId, onSelectChat, onNewC
                             {({ active }) => (
                               <button
                                 onClick={() => onDeleteChat(chat.id)}
-                                className={`block w-full text-left px-3 py-1 text-sm text-red-400 ${active ? 'bg-gray-700' : ''}`}
+                                className={`block w-full text-left px-3 py-1 text-sm font-semibold text-red-400 ${active ? 'bg-gray-700' : ''}`}
                               >
                                 🗑️ Delete
                               </button>

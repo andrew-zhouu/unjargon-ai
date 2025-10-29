@@ -8,6 +8,7 @@ import LevelSelect from '@/components/LevelSelect';
 import SimplifyButton from '@/components/SimplifyButton';
 import OutputBox from '@/components/OutputBox';
 import HistoryPanel from '@/components/HistoryPanel';
+import UploadBox from '@/components/UploadBox';
 import { v4 as uuidv4 } from 'uuid';
 
 export default function HomePage() {
@@ -18,6 +19,121 @@ export default function HomePage() {
   const [level, setLevel] = useState('intermediate');
   const [simplifiedText, setSimplifiedText] = useState('');
   const [loading, setLoading] = useState(false);
+  const [previewSrc, setPreviewSrc] = useState(null);
+  const [showTip, setShowTip] = useState(false);
+
+
+  useEffect(() => {
+  // show once per browser
+    if (typeof window !== 'undefined' && !localStorage.getItem('unjargon_tip_seen')) {
+      setShowTip(true);
+    }
+  }, []);
+
+  function dismissTip() {
+    try { localStorage.setItem('unjargon_tip_seen', '1'); } catch {}
+    setShowTip(false);
+  }
+
+  function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+  }
+
+  async function showPreview(att) {
+    if (!att) return;
+
+    // If we have the original File, preview from local bytes (reliable & instant)
+    if (att.file) {
+      const dataUrl = await fileToDataUrl(att.file);
+      // If the same image is clicked twice in a row, force a “change” so React re-renders:
+      setPreviewSrc(null);
+      setTimeout(() => setPreviewSrc(`${dataUrl}`), 0);
+      return;
+    }
+
+    // Fallback to signed/public URL with cache-buster so repeated clicks work
+    const base = att.url || att.viewUrl || att.publicUrl;
+    if (!base) return;
+    const bust = `${base}${base.includes('?') ? '&' : '?'}t=${Date.now()}`;
+    setPreviewSrc(null);
+    setTimeout(() => setPreviewSrc(bust), 0);
+  }
+
+  // NEW: hold uploaded attachments (so Analyze can find the latest image)
+  const [attachments, setAttachments] = useState([]);
+
+  function handleUploaded(meta, file) {
+    // Do NOT modify the input box
+    if (meta?.mime?.startsWith('image/')) {
+      // Make a local blob URL for reliable in-app preview
+      const blobUrl = file ? URL.createObjectURL(file) : null;
+
+      setAttachments((prev) => [
+        ...prev,
+        {
+          key: meta.key || meta.id,
+          name: file?.name || meta.id,
+          mime: meta.mime,
+          size: meta.size,
+          previewUrl: blobUrl || meta.viewUrl || null, // prefer blob for preview
+          viewUrl: meta.viewUrl || null,               // keep presigned GET as fallback
+          file,                                        // keep for analyze (dataURL)
+        },
+      ]);
+    }
+  }
+
+
+  function fixHelpfulDefinitionsFormatting(s) {
+    const text = String(s || '');
+
+    // Find the "3. Helpful Definitions" section bounds
+    const h3 = text.match(/^\s*3\.\s*Helpful Definitions\s*$/m);
+    if (!h3) return text;
+
+    const startIdx = h3.index + h3[0].length;
+    const tail = text.slice(startIdx);
+    const nextHeader = tail.match(/^\s*\d+\.\s/m);
+    const endIdx = nextHeader ? startIdx + nextHeader.index : text.length;
+
+    const before = text.slice(0, startIdx);
+    const body = text.slice(startIdx, endIdx);
+    const after = text.slice(endIdx);
+
+    const fixed = body
+      .split('\n')
+      .map((line) => {
+        const raw = line.trim();
+        if (!raw || /^N\/A$/i.test(raw)) return line;
+
+        // remove leading bullet if present
+        const noLead = raw.replace(/^[\-\*\u2022]\s+/, '');
+
+        // split on first colon
+        const colon = noLead.indexOf(':');
+        if (colon === -1) return line;
+
+        let term = noLead.slice(0, colon).trim().replace(/^\[?/, '').replace(/\]?$/, '');
+        let defn = noLead.slice(colon + 1).trimStart();
+
+        // wrap term with **...** if missing
+        if (!/^\*\*.*\*\*$/.test(term)) {
+          term = `**${term.replace(/^\*\*|\*\*$/g, '')}**`;
+        }
+
+        // Always output as a hyphen bullet for consistency
+        return `- ${term}: ${defn}`;
+      })
+      .join('\n');
+
+    return before + '\n' + fixed + after;
+  }
+
 
   // ✅ Side-by-side toggle
   const [showSideBySide, setShowSideBySide] = useState(false);
@@ -37,86 +153,106 @@ export default function HomePage() {
 
   const activeChat = chats.find((chat) => chat.id === activeChatId);
 
-    async function handleSimplify() {
-    if (!text.trim()) return;
-    setLoading(true);
-    setSimplifiedText('');
+  async function handleSimplify() {
+  // decide: if there is an image attachment, analyze it; else simplify text
+  const img = attachments.slice().reverse().find(a => a.mime?.startsWith('image/'));
 
-    try {
-      const res = await fetch('/api/simplify', {
+  if (!text.trim() && !img) return;
+
+  setLoading(true);
+  setSimplifiedText('');
+
+  try {
+    let res, raw, data, simplified;
+
+    if (img) {
+      // Prefer bytes (data URL) so server doesn't have to reach S3 at all
+      const toDataUrl = (file) =>
+        new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result);
+          r.onerror = reject;
+          r.readAsDataURL(file);
+        });
+      const dataUrl = img.file ? await toDataUrl(img.file) : null;
+
+      res = await fetch('/api/analyze-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, domain, level }),
+        body: JSON.stringify(
+          dataUrl ? { dataUrl, level } : { imageUrl: img.previewUrl, level }
+        ),
       });
-
-      // Read raw body once, then attempt JSON parse
-      const raw = await res.text();
-      let data = null;
+      raw = await res.text();
       try { data = JSON.parse(raw); } catch {}
-
-      if (!res.ok) {
-  // In dev you can inspect with warn; in prod, stay silent.
-      if (process.env.NODE_ENV === 'development') {
-        console.warn('simplify failed status:', res.status);
-        console.warn('simplify raw body:', raw);
-        console.warn('simplify parsed JSON:', data);
-      }
-
-      const msg =
-        (data && (data.error || data.detail)) ||
-        raw ||
-        `Request failed (${res.status})`;
-
-      setSimplifiedText(`1. Summary
-    ${msg}
-
-
-  2. Main Points
-  N/A
-
-  3. Helpful Definitions
-  N/A`);
-        return;
-      }
-
-      const simplified = (data && data.simplified) || 'No response';
-      setSimplifiedText(simplified);
-
-      const timestamp = new Date().toISOString();
-      const updatedChats = chats.map((chat) =>
-        chat.id === activeChatId
-          ? {
-              ...chat,
-              history: [
-                ...chat.history,
-                {
-                  id: Date.now().toString(),
-                  text,
-                  domain,
-                  level,
-                  result: simplified,
-                  timestamp,
-                },
-              ],
-              title: chat.title || text.slice(0, 30),
-            }
-          : chat
-      );
-      setChats(updatedChats);
-    } catch (err) {
-      console.error('simplify caught exception:', err);
-      setSimplifiedText(`1. Summary
-  Internal error
-
-  2. Main Points
-  N/A
-
-  3. Helpful Definitions
-  N/A`);
-    } finally {
-      setLoading(false);
+    } else {
+          // fall back to text simplify
+          res = await fetch('/api/simplify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, domain, level }),
+          });
+          raw = await res.text();
+          try { data = JSON.parse(raw); } catch {}
     }
+
+    if (!res.ok) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('simplify/analyze failed status:', res.status);
+        console.warn('raw body:', raw);
+        console.warn('parsed JSON:', data);
+      }
+      const msg = (data && (data.error || data.detail)) || raw || `Request failed (${res.status})`;
+      setSimplifiedText(`1. Summary
+${msg}
+
+2. Main Points
+N/A
+
+3. Helpful Definitions
+N/A`);
+      return;
+    }
+
+    simplified = (data && data.simplified) || 'No response';
+    simplified = fixHelpfulDefinitionsFormatting(simplified);
+    setSimplifiedText(simplified);
+
+    const timestamp = new Date().toISOString();
+    const updatedChats = chats.map((chat) =>
+      chat.id === activeChatId
+        ? {
+            ...chat,
+            history: [
+              ...chat.history,
+              {
+                id: Date.now().toString(),
+                text,
+                domain,
+                level,
+                result: simplified,
+                timestamp,
+              },
+            ],
+            title: chat.title || text.slice(0, 30),
+          }
+        : chat
+    );
+    setChats(updatedChats);
+  } catch (err) {
+    console.error('simplify/analyze caught exception:', err);
+    setSimplifiedText(`1. Summary
+Internal error
+
+2. Main Points
+N/A
+
+3. Helpful Definitions
+N/A`);
+  } finally {
+    setLoading(false);
   }
+}
 
 
   const handleNewChat = () => {
@@ -125,6 +261,7 @@ export default function HomePage() {
     setActiveChatId(newChat.id);
     setText('');
     setSimplifiedText('');
+    setAttachments([]);       // reset attachments for a fresh chat
     setShowSideBySide(false); // reset compare view for a fresh chat
   };
 
@@ -155,6 +292,7 @@ export default function HomePage() {
         setActiveChatId(null);
         setText('');
         setSimplifiedText('');
+        setAttachments([]);
       }
     }
   };
@@ -170,6 +308,7 @@ export default function HomePage() {
 
   return (
     <div className="flex h-screen">
+
       <HistoryPanel
         chats={chats}
         activeChatId={activeChatId}
@@ -189,12 +328,13 @@ export default function HomePage() {
               Unjargon.
             </span>
           </h1>
-      
-        <p className="text-center italic text-lg font-medium 
-          bg-gradient-to-r from-cyan-100 via-blue-300 to-indigo-600 bg-clip-text text-transparent">
-          Where clarity meets understanding.
-        </p>
-      </div>
+
+          <p className="text-center italic text-lg font-semibold
+            bg-gradient-to-r from-cyan-100 via-blue-300 to-indigo-600 bg-clip-text text-transparent">
+            Where clarity meets understanding.
+          </p>
+        </div>
+
         {/* Control Row */}
         <div className="flex flex-wrap items-stretch gap-6 mb-4">
           {/* each “column” gets a fixed height and bottom alignment */}
@@ -209,7 +349,7 @@ export default function HomePage() {
           {/* Toggle, kept closer to the left and aligned to the same baseline */}
           <div className="flex flex-col justify-end h-[73px]">
             <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-300">Side-by-Side</span>
+              <span className="text-sm font-semibold text-gray-300">Side-by-Side</span>
               <Switch
                 checked={showSideBySide}
                 onChange={(val) => {
@@ -226,12 +366,153 @@ export default function HomePage() {
                 />
               </Switch>
             </div>
-            <p className="text-xs text-gray-400 mt-1">Toggle side-by-side comparison</p>
+            <p className="text-xs font-semibold text-gray-400 mt-1">Toggle side-by-side comparison</p>
           </div>
         </div>
 
-        <div className="flex flex-col justify-end h-[50px] mt-4">
-          <SimplifyButton onClick={handleSimplify} loading={loading} text={text} />
+        {/* Upload row (kept close to the controls) */}
+        <div className="mt-2 mb-3">
+          <UploadBox onUploaded={handleUploaded} disabled={loading} />
+
+        </div>
+
+        {attachments.length > 0 && (
+          <div className="mt-3 flex items-center justify-between max-w-md p-2 pl-3 rounded-lg bg-gray-100/10 border border-gray-700 backdrop-blur-sm">
+            <div className="flex items-center gap-3 overflow-hidden">
+              <span className="text-sm text-gray-300 truncate">
+                {attachments[attachments.length - 1].file?.name ||
+                  attachments[attachments.length - 1].name ||
+                  'Uploaded image'}{' '}
+                •{' '}
+                {attachments[attachments.length - 1].mime
+                  ?.replace('image/', '')
+                  .toUpperCase() || 'FILE'}
+                •{' '}
+                {Math.round(
+                  (attachments[attachments.length - 1].file?.size ||
+                    attachments[attachments.length - 1].size) /
+                    102.4
+                ) / 10}{' '}
+                KB
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* Preview button */}
+              <button
+                type="button"
+                onClick={() => {
+                  const img = attachments[attachments.length - 1];
+                  if (img?.file) {
+                    const reader = new FileReader();
+                    reader.onload = () => setPreviewSrc(reader.result);
+                    reader.readAsDataURL(img.file);
+                  } else {
+                    setPreviewSrc(img.viewUrl || img.publicUrl || null);
+                  }
+                }}
+                className="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-gradient-to-r from-blue-500 to-cyan-400 hover:from-blue-400 hover:to-cyan-300 border border-blue-400 transition-colors"
+              >
+                Preview
+              </button>
+
+              {/* Remove button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setAttachments([]);
+                  setPreviewSrc(null);
+                }}
+                className="px-3 py-1.5 rounded-md text-xs font-semibold text-gray-300 border border-gray-500 hover:bg-gray-700 transition-colors"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        )}
+
+
+        {previewSrc && (
+          <div className="mt-3 p-3 rounded-lg bg-slate-800 border border-slate-700">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-semibold text-gray-200">Image preview</span>
+              <button
+                className="px-3 py-1.5 text-gray-300 text-xs font-semibold rounded bg-slate-700 border border-gray-500 hover:bg-slate-600"
+                onClick={() => {
+                  // Revoke blob URLs to avoid leaks
+                  if (previewSrc.startsWith('blob:')) {
+                    try { URL.revokeObjectURL(previewSrc); } catch {}
+                  }
+                  setPreviewSrc(null);
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div className="max-h-96 overflow-auto rounded bg-black/20 p-2">
+              <img
+                src={previewSrc}
+                alt="Attachment preview"
+                className="max-h-96 mx-auto object-contain"
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-col justify-end h-[50px] mt-6 relative">
+          {/* Anchor for the tooltip */}
+          <div className="relative w-full [&>button]:w-full [&>button]:block">
+          <SimplifyButton
+            onClick={handleSimplify}
+            loading={loading}
+            text={text || (attachments.some(a => a.mime?.startsWith('image/')) ? 'image' : '')}
+          /> 
+            
+            {/* First-visit popover */}
+            {showTip && (
+              <>
+                {/* dim background; click to dismiss */}
+                <div
+                  className="fixed inset-0 bg-black/40 z-40"
+                  onClick={dismissTip}
+                />
+
+                {/* bubble positioned above the button */}
+                <div
+                  role="dialog"
+                  aria-label="Unjargon tip"
+                  className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 z-50
+                            max-w-xs px-4 py-3 rounded-xl text-sm leading-snug
+                            text-white bg-slate-900/90 backdrop-blur border-3 border-white/10 shadow-lg"
+                >
+                  <div className="font-semibold mb-1">Unjargon = Simplify</div>
+                  <div>
+                    Click this button to turn jargon into clear language.  
+                    Works for text and images you upload.
+                  </div>
+
+                  {/* little arrow */}
+                  <div
+                    className="absolute left-1/2 top-full -translate-x-1/2 w-3 h-3
+                              bg-slate-900/90 border-r border-b border-white/10 rotate-45"
+                  />
+
+                  {/* action row */}
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={dismissTip}
+                      className="px-3 py-1 rounded-md text-xs font-semibold
+                                bg-white/90 text-slate-900 hover:bg-white"
+                    >
+                      Got it
+                    </button>
+                    <span className="text-[11px] text-white/70">(Shown only once)</span>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Output area */}
