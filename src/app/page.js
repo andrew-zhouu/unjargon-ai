@@ -88,6 +88,29 @@ export default function HomePage() {
     }
   }
 
+  // Stream a fetch Response into state, returning the full accumulated text
+  async function streamIntoState(res, setState) {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.body) return ''; // nothing to stream
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let full = '';
+
+    // ensure box shows up instantly
+    setState('');
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      full += chunk;
+      // live append to the UI
+      setState(prev => (prev ? prev + chunk : chunk));
+    }
+    return full;
+  }
+
 
   function fixHelpfulDefinitionsFormatting(s) {
     const text = String(s || '');
@@ -156,14 +179,13 @@ export default function HomePage() {
   async function handleSimplify() {
   // decide: if there is an image attachment, analyze it; else simplify text
   const img = attachments.slice().reverse().find(a => a.mime?.startsWith('image/'));
-
   if (!text.trim() && !img) return;
 
   setLoading(true);
   setSimplifiedText('');
 
   try {
-    let res, raw, data, simplified;
+    let res, raw, data, simplified, full;
 
     if (img) {
       // Prefer bytes (data URL) so server doesn't have to reach S3 at all
@@ -176,6 +198,7 @@ export default function HomePage() {
         });
       const dataUrl = img.file ? await toDataUrl(img.file) : null;
 
+      // call image endpoint
       res = await fetch('/api/analyze-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -183,19 +206,35 @@ export default function HomePage() {
           dataUrl ? { dataUrl, level } : { imageUrl: img.previewUrl, level }
         ),
       });
-      raw = await res.text();
-      try { data = JSON.parse(raw); } catch {}
+
+      // If the route streams plain text, show it live; otherwise parse JSON
+      if (res.ok && res.body) {
+        full = await streamIntoState(res, setSimplifiedText);
+        simplified = fixHelpfulDefinitionsFormatting(full);
+        setSimplifiedText(simplified);
+      } else {
+        raw = await res.text();
+        try { data = JSON.parse(raw); } catch {}
+      }
     } else {
-          // fall back to text simplify
-          res = await fetch('/api/simplify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, domain, level }),
-          });
-          raw = await res.text();
-          try { data = JSON.parse(raw); } catch {}
+      // text simplify (try streaming first)
+      res = await fetch('/api/simplify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, domain, level }),
+      });
+
+      if (res.ok && res.body) {
+        full = await streamIntoState(res, setSimplifiedText);
+        simplified = fixHelpfulDefinitionsFormatting(full);
+        setSimplifiedText(simplified);
+      } else {
+        raw = await res.text();
+        try { data = JSON.parse(raw); } catch {}
+      }
     }
 
+    // Non-streaming (JSON) fallback handling
     if (!res.ok) {
       if (process.env.NODE_ENV === 'development') {
         console.warn('simplify/analyze failed status:', res.status);
@@ -214,10 +253,15 @@ N/A`);
       return;
     }
 
-    simplified = (data && data.simplified) || 'No response';
-    simplified = fixHelpfulDefinitionsFormatting(simplified);
-    setSimplifiedText(simplified);
+    if (!full) {
+      // JSON shape: { simplified: "..." }
+      simplified = (data && data.simplified) || 'No response';
+      simplified = fixHelpfulDefinitionsFormatting(simplified);
+      setSimplifiedText(simplified);
+      full = simplified; // for history
+    }
 
+    // Save to history (unchanged logic)
     const timestamp = new Date().toISOString();
     const updatedChats = chats.map((chat) =>
       chat.id === activeChatId
@@ -230,7 +274,7 @@ N/A`);
                 text,
                 domain,
                 level,
-                result: simplified,
+                result: full,
                 timestamp,
               },
             ],
@@ -253,6 +297,7 @@ N/A`);
     setLoading(false);
   }
 }
+
 
 
   const handleNewChat = () => {
@@ -493,9 +538,17 @@ N/A`);
 
                   {/* little arrow */}
                   <div
-                    className="absolute left-1/2 top-full -translate-x-1/2 w-3 h-3
-                              bg-slate-900/90 border-r border-b border-white/10 rotate-45"
+                    className="absolute left-1/2 top-full -translate-x-1/2 mt-[2px] sm:mt-[3px]
+                              w-[10px] h-[10px] sm:w-[12px] sm:h-[12px]
+                              bg-slate-900/90 border-r border-b border-white/10 rotate-45
+                              rounded-[1px]"
+                    style={{
+                      transformOrigin: 'center top',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
+                    }}
                   />
+
+
 
                   {/* action row */}
                   <div className="mt-3 flex items-center gap-2">

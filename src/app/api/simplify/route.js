@@ -10,7 +10,7 @@ function levelStyle(level = 'intermediate') {
     case 'advanced':
       return `Write at an adult undergraduate college-educated level. Be concise and precise; use accurate terminology with brief clarifications.`;
     case 'professional':
-      return `Write for professional/PhD readers. Be technically rigorous, retain precise terms and nuance, and avoid over-simplification.`;
+      return `Write for professional/PhD readers. Be technically rigorous, retain precise terms and nuance, and avoid over-simplification. Discuss terms in-depth, include potential biases and perhaps even controversies for context.`;
     case 'intermediate':
     default:
       return `Write at ~high school grade level. Be clear and approachable, with light terminology explained.`;
@@ -19,27 +19,52 @@ function levelStyle(level = 'intermediate') {
 
 /* -------------------------------- getPrompt -------------------------------- */
 function getPrompt(domain, text, level) {
+  // Heuristic: treat very short inputs as "keyword lookups"
+  const wc = String(text || '').trim().split(/\s+/).filter(Boolean).length;
+  const isShort = wc > 0 && (wc <= 5 || String(text).trim().length < 40);
+
+  // Original baseIntro (unchanged semantics)
   const baseIntro = `
 ${levelStyle(level)}
 
 Please rewrite the following text using EXACTLY these three sections:
 
-1. Summary – A concise plain-English overview of what the text says, does, or changes.
+1. Summary – A concise plain-English overview of what the text says, does, or changes. If there are only a few words inputted, then discuss the definitions and any related information on those words or combinations of words, just as if someone had searched it up on Google and summarized the related info. (aim for recent info./news).
 2. Main Points – Bullet the major takeaways using "- " (who/what changed, actions, steps, implications). If you include an example, make it the LAST bullet and prefix it with "Example:".
-3. Helpful Definitions – Define **every** important term, acronym, or cited law/section in the form "**Term**: definition". If something repeats, include it anyway for clarity.
+3. Helpful Definitions – Define **every** important term, acronym, or cited law/section in the form "**Term**: definition". If something repeats, include it anyway for clarity. Define them just as if someone had searched it up on Google and summarized the related info. (aim for recent info./news).
 
 Constraints:
 - Output MUST contain exactly these three numbered headers (no bold, no colons).
 - Do NOT add extra sections or rename sections.
 - Do NOT restate/bold the section titles inside the section bodies.
 - If a section is empty, write "N/A".
-`;
+`.trim();
+
+  // Short-input mode: small, surgical override that forbids "N/A"
+  const baseIntroShort = `
+${levelStyle(level)}
+
+The input is a very short phrase/keyword. Produce an informative mini-brief using EXACTLY these three sections. Use general background knowledge to expand.
+Do **NOT** write "N/A" in any section, even if the input is only a few words.
+
+1. Summary – A clear overview of what the term/topic is and why it matters. If relevant, mention notable recent developments at a high level.
+2. Main Points – 4–8 hyphen bullets ("- ") covering key properties, uses, risks/benefits, context; if you include an example, make it the LAST bullet and prefix with "Example:".
+3. Helpful Definitions – "**Term**: definition" lines for important related concepts, acronyms, or sub-terms a reader would likely encounter when researching this topic.
+
+Constraints:
+- Output MUST contain exactly these three numbered headers (no bold, no colons).
+- Do NOT add extra sections or rename sections.
+- Do NOT restate/bold the section titles inside the section bodies.
+- Never write "N/A"; if information is minimal, expand with concise background.
+`.trim();
+
+  const intro = isShort ? baseIntroShort : baseIntro;
 
   switch ((domain || "general").toLowerCase()) {
     case "legal":
       return `You are a legal assistant helping regular people understand complex legal documents.
 
-${baseIntro}
+${intro}
 
 Domain guidance (LEGAL):
 - In Main Points: enumerate clauses, amendments, obligations, rights, penalties, and effective dates.
@@ -52,7 +77,7 @@ ${text}`;
     case "medical":
       return `You are a healthcare explainer helping patients understand medical information.
 
-${baseIntro}
+${intro}
 
 Domain guidance (MEDICAL):
 - In Main Points: include diagnosis/condition, purpose of test/procedure, key steps, risks/benefits, aftercare, and timelines.
@@ -64,7 +89,7 @@ ${text}`;
     case "government":
       return `You are a civic guide helping people understand government programs, policies, and rights.
 
-${baseIntro}
+${intro}
 
 Domain guidance (GOVERNMENT):
 - In Main Points: cover eligibility, benefits/obligations, responsible agency, how to apply/comply, deadlines, and penalties (if any).
@@ -76,7 +101,7 @@ ${text}`;
     case "financial":
       return `You are a finance explainer helping people understand financial documents, statements, and policies.
 
-${baseIntro}
+${intro}
 
 Domain guidance (FINANCIAL):
 - In Main Points: focus on fees/costs/rates, limits/caps, timelines, obligations/rights, and practical impacts/risks.
@@ -88,7 +113,7 @@ ${text}`;
     case "education":
       return `You are an education explainer helping students, parents, and educators understand academic policies and resources.
 
-${baseIntro}
+${intro}
 
 Domain guidance (EDUCATION):
 - In Main Points: outline requirements, steps, timelines, grading/credit impacts, and available support/resources.
@@ -97,11 +122,10 @@ Domain guidance (EDUCATION):
 Education text:
 ${text}`;
 
-    /* ------------------------------- NEW: nutrition ------------------------------ */
     case "nutrition":
       return `You are a nutrition explainer helping people understand foods, labels, and dietary guidance.
 
-${baseIntro}
+${intro}
 
 Domain guidance (NUTRITION):
 - In Main Points: highlight serving size, calories per serving, macronutrients (protein, carbs, fat), added sugars, sodium, fiber, notable vitamins/minerals (%DV), and any allergens/additives. Call out high/low red flags.
@@ -111,10 +135,10 @@ Domain guidance (NUTRITION):
 Nutrition text:
 ${text}`;
 
-    default: // general
+    default:
       return `You are a plain-language explainer helping people understand complex text.
 
-${baseIntro}
+${intro}
 
 Domain guidance (GENERAL):
 - In Main Points: summarize the key actions/ideas and any steps or implications.
@@ -130,16 +154,25 @@ function safeJsonParse(s) {
   try { return JSON.parse(s); } catch { return null; }
 }
 
-// Normalize header lines to clean anchors (no trailing punctuation/colons/etc.)
 function normalizeHeaders(s) {
   let out = String(s || '');
 
-  // Force exact header lines if variants exist
-  out = out.replace(/^\s*1\.\s*Summary.*$/m, '1. Summary');
-  out = out.replace(/^\s*2\.\s*Main\s*Points.*$/m, '2. Main Points');
-  out = out.replace(/^\s*3\.\s*Helpful\s*Definitions.*$/m, '3. Helpful Definitions');
+  // helper: normalize one header while preserving content
+  const normHeader = (input, labelRe, cleanLabel) =>
+    input.replace(labelRe, (m) => {
+      // strip the header label + optional colon/dash/emdash, keep the rest
+      const after = m
+        .replace(/^\s*/, '')
+        .replace(new RegExp(`^${cleanLabel}\\s*[:–—-]?\\s*`, 'i'), '');
+      return `${cleanLabel}${after ? `\n${after}` : ''}`;
+    });
 
-  // If still missing, append with N/A to ensure anchors exist
+  // 1) Make headers canonical (and keep any same-line content)
+  out = normHeader(out, /^\s*1\.\s*Summary[^\n]*$/im, '1. Summary');
+  out = normHeader(out, /^\s*2\.\s*Main\s*Points[^\n]*$/im, '2. Main Points');
+  out = normHeader(out, /^\s*3\.\s*Helpful\s*Definitions[^\n]*$/im, '3. Helpful Definitions');
+
+  // 2) If any header is missing entirely, create it with N/A
   if (!/^\s*1\.\s*Summary\s*$/m.test(out)) out = `1. Summary\n${out}`.trim();
   if (!/^\s*2\.\s*Main Points\s*$/m.test(out)) out += `\n\n2. Main Points\nN/A`;
   if (!/^\s*3\.\s*Helpful Definitions\s*$/m.test(out)) out += `\n\n3. Helpful Definitions\nN/A`;
@@ -147,76 +180,82 @@ function normalizeHeaders(s) {
   return out;
 }
 
-// Ensure "2. Main Points" body uses hyphen bullets
-function ensureBulletsInMainPoints(text) {
-  const src = String(text || '');
+function fixMainPointsBullets(text) {
+  // 1) Find the "2. Main Points" section
+  const reHeader = /^\s*2\.\s*Main\s*Points\s*$/m;
+  const m = text.match(reHeader);
+  if (!m) return text;
 
-  const sec2Header = src.match(/^\s*2\.\s*Main Points\s*$/m);
-  if (!sec2Header) return src;
+  const start = m.index + m[0].length;
+  const tail  = text.slice(start);
+  // stop at next numbered header ("3. ...") ONLY if it starts a line
+  const nextHeader = tail.match(/^\s*\d+\.\s/m);
+  const end = nextHeader ? start + nextHeader.index : text.length;
 
-  const startIdx = sec2Header.index + sec2Header[0].length;
-  const afterSec2 = src.slice(startIdx);
-  const nextHeader = afterSec2.match(/^\s*3\.\s*Helpful Definitions\s*$/m);
-  const sec2BodyEnd = nextHeader ? startIdx + nextHeader.index : src.length;
+  const before = text.slice(0, start);
+  let   body   = text.slice(start, end);
+  const after  = text.slice(end);
 
-  const before = src.slice(0, startIdx);
-  const body   = src.slice(startIdx, sec2BodyEnd);
-  const after  = src.slice(sec2BodyEnd);
+  // 2) Normalize line breaks & whitespace
+  body = body.replace(/\r\n/g, '\n');         // CRLF -> LF
+  body = body.replace(/\u00A0/g, ' ');        // nbsp -> space
+  body = body.replace(/^\s+|\s+$/g, '');      // trim
 
-  const raw = body.replace(/\r\n/g, '\n').trim();
-  if (!raw || /^N\/A$/i.test(raw)) return src;
+  // If it's empty or explicitly N/A, keep as is
+  if (!body || /^N\/A$/i.test(body)) return before + '\nN/A' + after;
 
-  // Already bullets?
-  if (/^\s*-\s+\S/m.test(raw)) return src;
+  // 3) Break the body into tentative lines
+  let lines = body.split(/\n+/).map(s => s.trim()).filter(Boolean);
 
-  // Normalize weird bullet symbols to hyphens first
-  let norm = raw
-    .replace(/^\s*[•–—]\s+/gm, '- ')
-    .replace(/\s+•\s+/g, '\n- ')
-    .replace(/\s+[–—]\s+/g, '\n- ');
-
-  // Try line split; if only one long line, split by sentences
-  let items = norm
-    .split(/\n+/)
-    .map(s => s.trim())
-    .filter(Boolean);
-
-  if (items.length <= 1) {
-    items = norm
+  // If there's only one “line” (the model gave a paragraph), sentence-split it
+  if (lines.length <= 1) {
+    const para = lines[0] || body;
+    // Split on sentence enders followed by space + capital or number/paren
+    lines = para
       .replace(/\s+/g, ' ')
-      .split(/(?<=[.!?])\s+(?=[A-Z(])/)
+      .split(/(?<=[.!?])\s+(?=[A-Z0-9(])/)
       .map(s => s.trim())
       .filter(Boolean);
   }
 
-  if (items.length === 0) return src;
+  // 4) Normalize any existing bullets/numbering → "- "
+  const bulletized = lines.map((l) => {
+    // remove common list markers first
+    l = l.replace(/^\s*(?:[-*•–—]\s+|\d+\)|\d+\.\s+)/, '');
+    // if it already starts with "- " after prior runs, don't double it
+    return l.startsWith('- ') ? l : `- ${l}`;
+  });
 
-  // Prefix each with "- "
-  const bulletized = '\n' + items.map(l => (l.startsWith('- ') ? l : `- ${l}`)).join('\n') + '\n';
-  return before + bulletized + after;
+  // 5) Reassemble with a guaranteed leading newline so your splitter sees bullets
+  return before + '\n' + bulletized.join('\n') + '\n' + after;
 }
+
 
 /* ----------------------------------- POST ---------------------------------- */
 export async function POST(req) {
   try {
-    // ACCEPT level (NEW)
     const { text, domain, level } = await req.json().catch(() => ({}));
     if (!text || typeof text !== 'string') {
-      return Response.json({ error: 'Missing "text" string.' }, { status: 400 });
+      return new Response(JSON.stringify({ error: 'Missing "text" string.' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
-    // PASS level to prompt builder (NEW)
     const prompt = getPrompt(domain, text, level);
 
-    const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+    // 🔹 Ask OpenAI for a *stream*
+    const upstream = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
-        temperature: 0,
+        model: 'gpt-4o-mini',
+        temperature: 1,
+        max_tokens: 450,
+        stream: true,
         messages: [
           {
             role: 'system',
@@ -236,35 +275,81 @@ Main Points formatting:
 Helpful Definitions formatting:
 - Under "Helpful Definitions", list EVERY important and potentially confusing term, acronym, or cited law/section in the inputted text, Summary, or Main points using the exact pattern: "**Term**: definition".
 
-Never add extra sections (e.g., "Key Definitions", "Example" as a standalone section). Never repeat or bold the section titles inside the bodies. If a section is empty, output "N/A".`,
+Never add extra sections. If a section is empty, output "N/A".`,
           },
           { role: 'user', content: prompt },
         ],
       }),
     });
 
-    const raw = await openaiRes.text();
-    const data = safeJsonParse(raw);
-    if (!openaiRes.ok || !data) {
-      console.error('OpenAI error:', openaiRes.status, raw);
-      return Response.json(
-        { error: 'Upstream model error', detail: raw?.slice(0, 2000) },
-        { status: 502 }
-      );
+    if (!upstream.ok || !upstream.body) {
+      const raw = await upstream.text().catch(() => '');
+      console.error('OpenAI stream error:', upstream.status, raw);
+      return new Response(JSON.stringify({ error: 'Upstream model error', detail: raw.slice(0, 2000) }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
-    // 1) Model output
-    let simplified = data?.choices?.[0]?.message?.content || '';
+    // 🔹 Convert OpenAI SSE into a plain text stream of content deltas
+    const decoder = new TextDecoder();
+    const encoder = new TextEncoder();
+    const ts = new TransformStream();
+    const writer = ts.writable.getWriter();
+    const reader = upstream.body.getReader();
 
-    // 2) Normalize headers to guaranteed clean anchors
-    simplified = normalizeHeaders(simplified);
+    (async () => {
+      try {
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
 
-    // 3) Enforce hyphen bullets in "2. Main Points"
-    simplified = ensureBulletsInMainPoints(simplified);
+          // Process complete lines
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // keep partial
 
-    return Response.json({ simplified });
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data:')) continue;
+
+            const data = trimmed.slice(5).trim();
+            if (data === '[DONE]') {
+              await writer.close();
+              return;
+            }
+
+            try {
+              const json = JSON.parse(data);
+              const delta = json?.choices?.[0]?.delta?.content || '';
+              if (delta) {
+                await writer.write(encoder.encode(delta));
+              }
+            } catch {
+              // ignore JSON parse errors for non-JSON heartbeats
+            }
+          }
+        }
+      } catch (e) {
+        try { await writer.abort(e); } catch {}
+      } finally {
+        try { await writer.close(); } catch {}
+      }
+    })();
+
+    // 🔹 Send as plain text so the client can read() chunks easily
+    return new Response(ts.readable, {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-cache',
+      },
+    });
   } catch (err) {
     console.error('API route failed:', err);
-    return Response.json({ error: 'Internal error' }, { status: 500 });
+    return new Response(JSON.stringify({ error: 'Internal error' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 }

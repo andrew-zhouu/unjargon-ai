@@ -29,6 +29,7 @@ export default function RootLayout({ children }) {
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`dark ${inter.variable} ${geistSans.variable} ${geistMono.variable}`}
     >
       <body className="bg-slate-900 min-h-screen flex flex-col text-white">

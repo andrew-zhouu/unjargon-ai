@@ -120,7 +120,7 @@ export default function TermsPage() {
           <Section id="accuracy" title="5. AI Outputs & Accuracy">
             <p>
               Our AI-generated outputs are for <strong>informational purposes only</strong>
-              . They may contain inaccuracies or omissions. You are responsible for{" "}
+              . They may contain inaccuracies or omissions. The output is limited to roughly  You are responsible for{" "}
               <strong>verifying</strong> all results—especially in{" "}
               <strong>legal, medical, financial, or safety-critical</strong> contexts.
               Nothing constitutes professional advice.
