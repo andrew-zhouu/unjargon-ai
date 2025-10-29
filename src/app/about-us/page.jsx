@@ -45,9 +45,17 @@ export default function AboutPage() {
         <h1 className="mt-4 text-4xl font-bold tracking-tight sm:text-5xl">
           We make complex language <span className="bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">understandable</span>.
         </h1>
+        <p className="mt-8 max-w-2xl text-base text-muted-foreground">
+        I started Unjargon AI with a simple belief: understanding shouldn’t depend on how complicated something sounds. 
+        Whether it’s a law, a research paper, or a medical note, everyone deserves clarity.
+        </p>
+
         <p className="mt-4 max-w-2xl text-base text-muted-foreground">
-          Unjargon AI turns dense legal, medical, and technical text into clear language—without losing
-          accuracy. Our north star: clearer decisions, faster.
+        What began as my curiosity about language and technology has grown into a mission—using AI to make expertise 
+        accessible without diluting its meaning. Our goal is simple: help people understand.{" "}
+        <span className="font-semibold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400">
+            Quickly. Clearly.
+        </span>
         </p>
       </header>
 
