@@ -538,16 +538,23 @@ N/A`);
 
                   {/* little arrow */}
                   <div
-                    className="absolute left-1/2 top-full -translate-x-1/2 mt-[2px] sm:mt-[3px]
-                              w-[10px] h-[10px] sm:w-[12px] sm:h-[12px]
-                              bg-slate-900/90 border-r border-b border-white/10 rotate-45
-                              rounded-[1px]"
+                    className="absolute left-1/2 top-full -translate-x-1/2 mt-[3px]
+                    block
+                    size-[12px] sm:size-[12px]      /* width = height */
+                    aspect-square                    /* enforce 1:1 ratio */
+                    rotate-45 transform-gpu          /* crisp rotation */
+                    bg-slate-900/90
+                    border-r border-b border-white/10
+                    rounded-[1px]
+                    leading-none
+                    "
                     style={{
                       transformOrigin: 'center top',
+                      willChange: 'transform',
                       boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
                     }}
                   />
-
+                  
 
 
                   {/* action row */}

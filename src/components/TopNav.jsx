@@ -38,7 +38,7 @@ export default function TopNav() {
             <nav className="flex flex-col text-sm">
               <Link
                 href="/"
-                className="px-4 py-2 hover:bg-white/5"
+                className="px-4 py-2 font-bold hover:bg-white/8"
                 onClick={() => setOpen(false)}
                 role="menuitem"
               >
@@ -46,7 +46,7 @@ export default function TopNav() {
               </Link>
               <Link
                 href="/about-us"
-                className="px-4 py-2 hover:bg-white/5"
+                className="px-4 py-2 font-semibold hover:bg-white/5"
                 onClick={() => setOpen(false)}
                 role="menuitem"
               >
@@ -54,7 +54,7 @@ export default function TopNav() {
               </Link>
               <Link
                 href="/contact"
-                className="px-4 py-2 hover:bg-white/5"
+                className="px-4 py-2 font-semibold hover:bg-white/5"
                 onClick={() => setOpen(false)}
                 role="menuitem"
               >
@@ -62,7 +62,7 @@ export default function TopNav() {
               </Link>
               <Link
                 href="/terms"
-                className="px-4 py-2 hover:bg-white/5"
+                className="px-4 py-2 font-semibold hover:bg-white/5"
                 onClick={() => setOpen(false)}
                 role="menuitem"
               >
