@@ -538,19 +538,34 @@ N/A`);
 
                   {/* little arrow */}
                   {/* tooltip arrow (perfect square diamond, not squished) */}
-                  <div
-                    className="
-                      absolute left-1/2 top-full -translate-x-1/2 mt-[3px]
-                      block aspect-square w-[14px] sm:w-[12px]
-                      bg-slate-900/90 border-r border-b border-white/10
-                      rotate-45 rounded-[1px]
-                      shrink-0 leading-none pointer-events-none transform-gpu
-                    "
-                    style={{
-                      transformOrigin: 'center top',
-                      willChange: 'transform',
-                    }}
-                  />
+                  {/* tooltip arrow – border-triangle, never squishes */}
+                  <div className="relative isolate">
+                    {/* outer hairline (border) */}
+                    <div
+                      aria-hidden="true"
+                      className="
+                        absolute left-1/2 top-full -translate-x-1/2 mt-2
+                        w-0 h-0
+                        border-l-[9px] border-l-transparent
+                        border-r-[9px] border-r-transparent
+                        border-t-[9px] border-t-white/10
+                        pointer-events-none
+                      "
+                    />
+                    {/* inner fill */}
+                    <div
+                      aria-hidden="true"
+                      className="
+                        absolute left-1/2 top-full -translate-x-1/2 mt-[9px]
+                        w-0 h-0
+                        border-l-[8px] border-l-transparent
+                        border-r-[8px] border-r-transparent
+                        border-t-[8px] border-t-slate-900/90
+                        pointer-events-none
+                      "
+                    />
+                  </div>
+
 
                   
 
