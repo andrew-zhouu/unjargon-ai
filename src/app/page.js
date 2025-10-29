@@ -537,24 +537,16 @@ N/A`);
                   </div>
 
                   {/* little arrow */}
-                  {/* Tooltip arrow — diamond (can’t squish on iOS) */}
-<div
-  aria-hidden="true"
-  className="absolute left-1/2 top-full -translate-x-1/2 mt-2 pointer-events-none"
->
-  <div
-    className="
-      w-3 h-3
-      min-w-[12px] min-h-[12px] max-w-[12px] max-h-[12px]
-      bg-slate-900/90 border border-white/10
-      rotate-45 rounded-[2px] shadow-sm
-      inline-block align-middle
-      shrink-0 grow-0
-      transform-gpu
-    "
-  />
-</div>
-
+                  <div
+                    className="absolute left-1/2 top-full -translate-x-1/2 mt-[2px] sm:mt-[3px]
+                              w-[10px] h-[10px] sm:w-[12px] sm:h-[12px]
+                              bg-slate-900/90 border-r border-b border-white/10 rotate-45
+                              rounded-[1px]"
+                    style={{
+                      transformOrigin: 'center top',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
+                    }}
+                  />
 
 
 
