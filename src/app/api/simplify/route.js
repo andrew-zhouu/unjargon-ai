@@ -1,8 +1,51 @@
 // app/api/simplify/route.js
-export const runtime = 'nodejs';         // optional: avoids Edge quirks
-export const dynamic = 'force-dynamic';  // optional: no caching
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-/* ----------------------------- level style (NEW) ---------------------------- */
+import { rateLimit, getClientIp } from '@/lib/rateLimiter';
+
+/* -------------------------- constants & helpers --------------------------- */
+
+const MAX_CHARS = 10_000;
+
+function jsonRes(status, payload) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+  });
+}
+
+/* -------------------------- maintenance + rate-limit ---------------------- */
+
+function maintenanceGuard() {
+  if (process.env.MAINTENANCE_MODE === 'true') {
+    const msg = process.env.MAINTENANCE_MESSAGE || 'Service temporarily unavailable.';
+    return jsonRes(503, { error: 'Under maintenance', detail: msg });
+  }
+  return null;
+}
+
+// small in-memory limiter (per-node)
+const RL_WINDOW_MS = 60_000;
+const RL_MAX = 30;
+const rlStore = new Map();
+
+function rateLimitGuard(req) {
+  const xf = req.headers.get('x-forwarded-for') || '';
+  const ip = (xf.split(',')[0] || req.headers.get('cf-connecting-ip') || 'unknown').trim();
+  const now = Date.now();
+  const arr = rlStore.get(ip) || [];
+  const recent = arr.filter((t) => now - t < RL_WINDOW_MS);
+  recent.push(now);
+  rlStore.set(ip, recent);
+  if (recent.length > RL_MAX) {
+    return jsonRes(429, { error: 'Rate limited', detail: 'Too many requests. Please slow down.' });
+  }
+  return null;
+}
+
+/* ----------------------------- level style -------------------------------- */
+
 function levelStyle(level = 'intermediate') {
   switch ((level || '').toLowerCase()) {
     case 'beginner':
@@ -17,13 +60,12 @@ function levelStyle(level = 'intermediate') {
   }
 }
 
-/* -------------------------------- getPrompt -------------------------------- */
+/* -------------------------------- getPrompt ------------------------------- */
+
 function getPrompt(domain, text, level) {
-  // Heuristic: treat very short inputs as "keyword lookups"
   const wc = String(text || '').trim().split(/\s+/).filter(Boolean).length;
   const isShort = wc > 0 && (wc <= 5 || String(text).trim().length < 40);
 
-  // Original baseIntro (unchanged semantics)
   const baseIntro = `
 ${levelStyle(level)}
 
@@ -40,7 +82,6 @@ Constraints:
 - If a section is empty, write "N/A".
 `.trim();
 
-  // Short-input mode: small, surgical override that forbids "N/A"
   const baseIntroShort = `
 ${levelStyle(level)}
 
@@ -60,8 +101,8 @@ Constraints:
 
   const intro = isShort ? baseIntroShort : baseIntro;
 
-  switch ((domain || "general").toLowerCase()) {
-    case "legal":
+  switch ((domain || 'general').toLowerCase()) {
+    case 'legal':
       return `You are a legal assistant helping regular people understand complex legal documents.
 
 ${intro}
@@ -73,8 +114,7 @@ Domain guidance (LEGAL):
 
 Legal text:
 ${text}`;
-
-    case "medical":
+    case 'medical':
       return `You are a healthcare explainer helping patients understand medical information.
 
 ${intro}
@@ -85,8 +125,7 @@ Domain guidance (MEDICAL):
 
 Medical text:
 ${text}`;
-
-    case "government":
+    case 'government':
       return `You are a civic guide helping people understand government programs, policies, and rights.
 
 ${intro}
@@ -97,8 +136,7 @@ Domain guidance (GOVERNMENT):
 
 Government text:
 ${text}`;
-
-    case "financial":
+    case 'financial':
       return `You are a finance explainer helping people understand financial documents, statements, and policies.
 
 ${intro}
@@ -109,8 +147,7 @@ Domain guidance (FINANCIAL):
 
 Financial text:
 ${text}`;
-
-    case "education":
+    case 'education':
       return `You are an education explainer helping students, parents, and educators understand academic policies and resources.
 
 ${intro}
@@ -121,8 +158,7 @@ Domain guidance (EDUCATION):
 
 Education text:
 ${text}`;
-
-    case "nutrition":
+    case 'nutrition':
       return `You are a nutrition explainer helping people understand foods, labels, and dietary guidance.
 
 ${intro}
@@ -134,7 +170,6 @@ Domain guidance (NUTRITION):
 
 Nutrition text:
 ${text}`;
-
     default:
       return `You are a plain-language explainer helping people understand complex text.
 
@@ -149,111 +184,106 @@ ${text}`;
   }
 }
 
-/* --------------------------------- helpers --------------------------------- */
-function safeJsonParse(s) {
-  try { return JSON.parse(s); } catch { return null; }
-}
+/* ------------------------------ POST handler ------------------------------- */
 
-function normalizeHeaders(s) {
-  let out = String(s || '');
-
-  // helper: normalize one header while preserving content
-  const normHeader = (input, labelRe, cleanLabel) =>
-    input.replace(labelRe, (m) => {
-      // strip the header label + optional colon/dash/emdash, keep the rest
-      const after = m
-        .replace(/^\s*/, '')
-        .replace(new RegExp(`^${cleanLabel}\\s*[:–—-]?\\s*`, 'i'), '');
-      return `${cleanLabel}${after ? `\n${after}` : ''}`;
-    });
-
-  // 1) Make headers canonical (and keep any same-line content)
-  out = normHeader(out, /^\s*1\.\s*Summary[^\n]*$/im, '1. Summary');
-  out = normHeader(out, /^\s*2\.\s*Main\s*Points[^\n]*$/im, '2. Main Points');
-  out = normHeader(out, /^\s*3\.\s*Helpful\s*Definitions[^\n]*$/im, '3. Helpful Definitions');
-
-  // 2) If any header is missing entirely, create it with N/A
-  if (!/^\s*1\.\s*Summary\s*$/m.test(out)) out = `1. Summary\n${out}`.trim();
-  if (!/^\s*2\.\s*Main Points\s*$/m.test(out)) out += `\n\n2. Main Points\nN/A`;
-  if (!/^\s*3\.\s*Helpful Definitions\s*$/m.test(out)) out += `\n\n3. Helpful Definitions\nN/A`;
-
-  return out;
-}
-
-function fixMainPointsBullets(text) {
-  // 1) Find the "2. Main Points" section
-  const reHeader = /^\s*2\.\s*Main\s*Points\s*$/m;
-  const m = text.match(reHeader);
-  if (!m) return text;
-
-  const start = m.index + m[0].length;
-  const tail  = text.slice(start);
-  // stop at next numbered header ("3. ...") ONLY if it starts a line
-  const nextHeader = tail.match(/^\s*\d+\.\s/m);
-  const end = nextHeader ? start + nextHeader.index : text.length;
-
-  const before = text.slice(0, start);
-  let   body   = text.slice(start, end);
-  const after  = text.slice(end);
-
-  // 2) Normalize line breaks & whitespace
-  body = body.replace(/\r\n/g, '\n');         // CRLF -> LF
-  body = body.replace(/\u00A0/g, ' ');        // nbsp -> space
-  body = body.replace(/^\s+|\s+$/g, '');      // trim
-
-  // If it's empty or explicitly N/A, keep as is
-  if (!body || /^N\/A$/i.test(body)) return before + '\nN/A' + after;
-
-  // 3) Break the body into tentative lines
-  let lines = body.split(/\n+/).map(s => s.trim()).filter(Boolean);
-
-  // If there's only one “line” (the model gave a paragraph), sentence-split it
-  if (lines.length <= 1) {
-    const para = lines[0] || body;
-    // Split on sentence enders followed by space + capital or number/paren
-    lines = para
-      .replace(/\s+/g, ' ')
-      .split(/(?<=[.!?])\s+(?=[A-Z0-9(])/)
-      .map(s => s.trim())
-      .filter(Boolean);
+export async function POST(req) {
+  // Early guards
+  {
+    const r = maintenanceGuard();
+    if (r) return r;
+  }
+  {
+    const r = rateLimitGuard(req);
+    if (r) return r;
   }
 
-  // 4) Normalize any existing bullets/numbering → "- "
-  const bulletized = lines.map((l) => {
-    // remove common list markers first
-    l = l.replace(/^\s*(?:[-*•–—]\s+|\d+\)|\d+\.\s+)/, '');
-    // if it already starts with "- " after prior runs, don't double it
-    return l.startsWith('- ') ? l : `- ${l}`;
-  });
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!openaiKey) return jsonRes(500, { error: 'Server missing OPENAI_API_KEY' });
 
-  // 5) Reassemble with a guaranteed leading newline so your splitter sees bullets
-  return before + '\n' + bulletized.join('\n') + '\n' + after;
-}
+  // Robust body parsing: JSON or text
+  const ct = req.headers.get('content-type') || '';
+  let text = '';
+  let domain = 'general';
+  let level = 'intermediate';
 
+  if (ct.includes('application/json')) {
+    try {
+      const body = await req.json();
+      if (typeof body?.text === 'string') text = body.text;
+      else if (typeof body?.content === 'string') text = body.content;
+      else if (typeof body?.input === 'string') text = body.input;
+      if (typeof body?.domain === 'string') domain = body.domain;
+      if (typeof body?.level === 'string') level = body.level;
+    } catch {
+      // fall through to raw text
+    }
+  }
 
-/* ----------------------------------- POST ---------------------------------- */
-export async function POST(req) {
-  try {
-    const { text, domain, level } = await req.json().catch(() => ({}));
-    if (!text || typeof text !== 'string') {
-      return new Response(JSON.stringify({ error: 'Missing "text" string.' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
+  if (!text) {
+    const raw = (await req.text().catch(() => '')) || '';
+    const trimmed = raw.trim();
+    if (trimmed) {
+      // If it looks like JSON but header was wrong, try to parse
+      if (/^[{\[]/.test(trimmed)) {
+        try {
+          const body = JSON.parse(trimmed);
+          if (typeof body?.text === 'string') text = body.text;
+          else if (typeof body?.content === 'string') text = body.content;
+          else if (typeof body?.input === 'string') text = body.input;
+          if (typeof body?.domain === 'string') domain = body.domain;
+          if (typeof body?.level === 'string') level = body.level;
+        } catch {
+          text = trimmed; // treat as plain text
+        }
+      } else {
+        text = trimmed; // plain text body
+      }
+    }
+  }
+
+  text = (text ?? '').toString().trim();
+  if (!text) return jsonRes(400, { error: 'Missing "text" string.' });
+
+  if (text.length > MAX_CHARS) {
+    return jsonRes(413, {
+      error: 'Input too large',
+      detail: `Your input has ${text.length.toLocaleString()} characters. Limit is ${MAX_CHARS.toLocaleString()}.`,
+    });
+  }
+
+  // Secondary (redis/etc.) limiter if you use it
+  {
+    const ip = getClientIp(req);
+    const { ok, remaining, limit, resetMs } = rateLimit({
+      key: `simplify:${ip}`,
+      limit: 20,
+      windowMs: 60_000,
+    });
+    if (!ok) {
+      return new Response(JSON.stringify({ error: 'Rate limit exceeded. Please try again shortly.' }), {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-RateLimit-Limit': String(limit),
+          'X-RateLimit-Remaining': String(remaining),
+          'X-RateLimit-Reset': String(Math.ceil(resetMs / 1000)),
+        },
       });
     }
+  }
 
+  try {
     const prompt = getPrompt(domain, text, level);
 
-    // 🔹 Ask OpenAI for a *stream*
     const upstream = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${openaiKey}`,
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
-        temperature: 1,
+        temperature: 0,         // stable outputs for formatting
         max_tokens: 450,
         stream: true,
         messages: [
@@ -267,13 +297,13 @@ export async function POST(req) {
 
 Hard formatting rules:
 - Use the three numbered headers EXACTLY as written above (no bold, no colons, no extra punctuation).
-- Start each section on its own line; content follows immediately on subsequent lines.
+- Start each section on its own line; content follows on subsequent lines.
 
-Main Points formatting:
+Main Points:
 - Under "Main Points", use ONLY hyphens "-" for each new item. If there is an example, include it as the LAST bullet prefixed with "Example:".
 
-Helpful Definitions formatting:
-- Under "Helpful Definitions", list EVERY important and potentially confusing term, acronym, or cited law/section in the inputted text, Summary, or Main points using the exact pattern: "**Term**: definition".
+Helpful Definitions:
+- Under "Helpful Definitions", list EVERY important term, acronym, or cited law/section in the input, Summary, or Main Points using EXACTLY: "- **Term**: definition".
 
 Never add extra sections. If a section is empty, output "N/A".`,
           },
@@ -284,14 +314,10 @@ Never add extra sections. If a section is empty, output "N/A".`,
 
     if (!upstream.ok || !upstream.body) {
       const raw = await upstream.text().catch(() => '');
-      console.error('OpenAI stream error:', upstream.status, raw);
-      return new Response(JSON.stringify({ error: 'Upstream model error', detail: raw.slice(0, 2000) }), {
-        status: 502,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return jsonRes(502, { error: 'Upstream model error', detail: raw.slice(0, 2000) });
     }
 
-    // 🔹 Convert OpenAI SSE into a plain text stream of content deltas
+    // Stream SSE -> plain text
     const decoder = new TextDecoder();
     const encoder = new TextEncoder();
     const ts = new TransformStream();
@@ -306,28 +332,22 @@ Never add extra sections. If a section is empty, output "N/A".`,
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
 
-          // Process complete lines
           const lines = buffer.split('\n');
-          buffer = lines.pop() || ''; // keep partial
-
+          buffer = lines.pop() || '';
           for (const line of lines) {
             const trimmed = line.trim();
             if (!trimmed.startsWith('data:')) continue;
-
             const data = trimmed.slice(5).trim();
             if (data === '[DONE]') {
               await writer.close();
               return;
             }
-
             try {
               const json = JSON.parse(data);
               const delta = json?.choices?.[0]?.delta?.content || '';
-              if (delta) {
-                await writer.write(encoder.encode(delta));
-              }
+              if (delta) await writer.write(encoder.encode(delta));
             } catch {
-              // ignore JSON parse errors for non-JSON heartbeats
+              // ignore keepalives
             }
           }
         }
@@ -338,18 +358,17 @@ Never add extra sections. If a section is empty, output "N/A".`,
       }
     })();
 
-    // 🔹 Send as plain text so the client can read() chunks easily
     return new Response(ts.readable, {
-      headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'Cache-Control': 'no-cache',
-      },
+      headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache' },
     });
   } catch (err) {
-    console.error('API route failed:', err);
-    return new Response(JSON.stringify({ error: 'Internal error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    console.error('simplify route failed:', err);
+    return jsonRes(500, { error: 'Internal error' });
   }
+}
+
+/* ------------------------------ GET fallback ------------------------------- */
+
+export async function GET() {
+  return jsonRes(405, { error: 'Method not allowed' });
 }

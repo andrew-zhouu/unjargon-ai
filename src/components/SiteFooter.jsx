@@ -18,6 +18,15 @@ export default function SiteFooter() {
             >
               Terms of Use
             </Link>
+            
+          </div>
+          <div className="text-[11px]">
+            <Link
+              href="/privacy"
+              className="underline underline-offset-2 hover:text-white/90"
+            >
+              Privacy Policy
+            </Link>
           </div>
 
           {/* Right: hamburger */}
