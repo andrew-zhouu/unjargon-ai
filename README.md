@@ -104,7 +104,7 @@ Unjargon started from a simple observation: clarity is not just about making lan
 
 That is why the product focuses so heavily on structure. A good explanation should not just be accurate. It should also be organized in a way that makes the next step obvious.
 
-## Possible Improvements
+## Future Improvements
 
 - Better component modularization
 - More robust PDF parsing, especially for scanned documents
