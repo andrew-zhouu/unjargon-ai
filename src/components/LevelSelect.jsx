@@ -1,4 +1,5 @@
 "use client";
+import { Gauge } from "lucide-react";
 import {
   Select,
   SelectTrigger,
@@ -6,37 +7,44 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
+import { controlTriggerClass, controlContentClass, controlItemClass } from "@/components/DomainSelect";
 
-export default function LevelSelect({ value, onChange }) {
+// Values and descriptors must match levelStyle() in the API routes.
+export const LEVELS = [
+  { value: "beginner", label: "Beginner", hint: "Simple" },
+  { value: "intermediate", label: "Intermediate", hint: "Clear" },
+  { value: "advanced", label: "Advanced", hint: "Detailed" },
+  { value: "professional", label: "Professional", hint: "Scholarly" },
+];
+
+export function levelLabel(value) {
+  return LEVELS.find((l) => l.value === value)?.label || "Intermediate";
+}
+
+export default function LevelSelect({ value, onChange, disabled, className }) {
+  const current = LEVELS.find((l) => l.value === value) || LEVELS[1];
+
   return (
-    <div className="mt-4">
-      <label className="block text-xl font-bold mb-2 
-             bg-gradient-to-r from-blue-400 to-cyan-600 
-             bg-clip-text text-transparent">
-        Level
-      </label>
+    <Select value={value} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger
+        aria-label={`Level: ${current.label} (${current.hint})`}
+        className={cn(controlTriggerClass, className)}
+      >
+        <Gauge className="size-4 text-brand-violet" aria-hidden="true" />
+        <SelectValue placeholder="Choose level" />
+      </SelectTrigger>
 
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="w-64 p-5.5 px-5 mt-1 font-medium font-semibold rounded-xl bg-gray-800 text-cyan-100 border-2 border-blue-400 mb-2 
-                     focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-150 appearance-none">
-          <SelectValue placeholder="Choose level" />
-        </SelectTrigger>
-
-        <SelectContent className="bg-gray-800 text-cyan-100 font-medium rounded-xl border border-blue-500">
-          <SelectItem value="beginner" className="rounded-md px-4 py-3 hover:bg-blue-700 cursor-pointer">
-            🌱 Beginner (Simple)
+      <SelectContent className={controlContentClass}>
+        {LEVELS.map(({ value: v, label, hint }) => (
+          <SelectItem key={v} value={v} className={controlItemClass}>
+            <span>
+              {label}
+              <span className="text-text-muted max-sm:hidden"> · {hint}</span>
+            </span>
           </SelectItem>
-          <SelectItem value="intermediate" className="rounded-md px-4 py-3 hover:bg-blue-700 cursor-pointer">
-            📘   Intermediate (Clear)
-          </SelectItem>
-          <SelectItem value="advanced" className="rounded-md px-4 py-3 hover:bg-blue-700 cursor-pointer">
-            🎓 Advanced (Detailed)
-          </SelectItem>
-          <SelectItem value="professional" className="rounded-md px-4 py-3 hover:bg-blue-700 cursor-pointer">
-            🧠 Professional (Scholarly)
-          </SelectItem>
-        </SelectContent>
-      </Select>
-    </div>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

@@ -1,53 +1,70 @@
 "use client";
 import {
+  Globe,
+  Scale,
+  Stethoscope,
+  Landmark,
+  GraduationCap,
+  TrendingUp,
+  Apple,
+} from "lucide-react";
+import {
   Select,
   SelectTrigger,
   SelectValue,
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
+// Values must match the domains handled by /api/simplify.
+export const DOMAINS = [
+  { value: "general", label: "General", icon: Globe },
+  { value: "legal", label: "Legal", icon: Scale },
+  { value: "medical", label: "Medical", icon: Stethoscope },
+  { value: "government", label: "Government", icon: Landmark },
+  { value: "education", label: "Education", icon: GraduationCap },
+  { value: "financial", label: "Financial", icon: TrendingUp },
+  { value: "nutrition", label: "Nutritional", icon: Apple, note: "New" },
+];
 
+export function domainLabel(value) {
+  return DOMAINS.find((d) => d.value === value)?.label || "General";
+}
 
-export default function DomainSelect({ value, onChange }) {
+export const controlTriggerClass =
+  "h-9 w-auto gap-1.5 rounded-lg border border-line bg-white/[0.04] px-2.5 text-sm sm:gap-2 sm:px-3 font-medium text-text shadow-none " +
+  "hover:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-brand-cyan/60 focus-visible:border-transparent " +
+  "data-[state=open]:bg-white/[0.08] disabled:opacity-50 [&>svg:last-child]:text-text-muted [&>svg:last-child]:opacity-100";
+
+export const controlContentClass =
+  "rounded-xl border border-line-strong bg-ink-800 text-text shadow-2xl shadow-black/40";
+
+export const controlItemClass =
+  "rounded-md py-2 pl-2.5 pr-8 text-sm text-text-soft cursor-pointer " +
+  "focus:bg-white/[0.07] focus:text-text data-[state=checked]:text-text";
+
+export default function DomainSelect({ value, onChange, disabled, className }) {
+  const current = DOMAINS.find((d) => d.value === value) || DOMAINS[0];
+
   return (
-    <div className="">
-      <label className="block text-xl font-bold mb-2 mt-3
-             bg-gradient-to-r from-blue-400 to-cyan-600 
-             bg-clip-text text-transparent">
-        Domain
-      </label>
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="w-64 p-5.5 px-5 mt-1 font-medium font-semibold rounded-xl bg-gray-800 text-cyan-100 border-2 border-blue-400 mb-2 
-                 focus:outline-none focus:ring-2 focus:ring-blue-500 
-                 transition duration-150 appearance-none">
+    <Select value={value} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger aria-label={`Domain: ${current.label}`} className={cn(controlTriggerClass, className)}>
+        {/* SelectValue mirrors the selected item, including its icon */}
         <SelectValue placeholder="Choose domain" />
       </SelectTrigger>
 
-      <SelectContent className="bg-gray-800 text-cyan-100 font-medium rounded-xl border border-blue-500">
-        <SelectItem value="general" className="rounded-md px-4 py-4 hover:bg-blue-700 cursor-pointer">
-          🌐 General
-        </SelectItem>
-        <SelectItem value="legal" className="rounded-md px-4 py-4 hover:bg-blue-700 cursor-pointer">
-          ⚖️ Legal
-        </SelectItem>
-        <SelectItem value="medical" className="rounded-md px-4 py-4 hover:bg-blue-700 cursor-pointer">
-          🩺 Medical
-        </SelectItem>
-        <SelectItem value="government" className="rounded-md px-4 py-4 hover:bg-blue-700 cursor-pointer">
-          🏛️ Government
-        </SelectItem>
-        <SelectItem value="education" className="rounded-md px-4 py-4 hover:bg-blue-700 cursor-pointer">
-          📘 Education
-        </SelectItem>
-        <SelectItem value="financial" className="rounded-md px-4 py-4 hover:bg-blue-700 cursor-pointer">
-          💰 Financial
-        </SelectItem>
-        <SelectItem 
-          value="nutrition" className="rounded-md px-4 py-4 hover:bg-blue-700 cursor-pointer">🥗 Nutritional (New!)
-        </SelectItem>
+      <SelectContent className={controlContentClass}>
+        {DOMAINS.map(({ value: v, label, icon: ItemIcon, note }) => (
+          <SelectItem key={v} value={v} className={controlItemClass}>
+            <ItemIcon className="size-4 text-brand-cyan" aria-hidden="true" />
+            <span className="whitespace-nowrap">{label}</span>
+            {note && (
+              <span className="text-xs text-brand-cyan [[data-slot=select-trigger]_&]:hidden">{note}</span>
+            )}
+          </SelectItem>
+        ))}
       </SelectContent>
     </Select>
-    </div>
   );
 }

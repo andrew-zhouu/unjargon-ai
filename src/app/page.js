@@ -1,15 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Switch } from '@headlessui/react';
-import TextInput from '@/components/TextInput';
-import DomainSelect from '@/components/DomainSelect';
-import LevelSelect from '@/components/LevelSelect';
-import SimplifyButton from '@/components/SimplifyButton';
-import OutputBox from '@/components/OutputBox';
-import HistoryPanel from '@/components/HistoryPanel';
-import UploadBox from '@/components/UploadBox';
+import { useEffect, useRef, useState } from 'react';
+import { AlignLeft, Check, ChevronDown, Columns2, Copy, FileText, Menu, Plus } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import Composer from '@/components/Composer';
+import CompareView from '@/components/CompareView';
+import DomainSelect, { DOMAINS } from '@/components/DomainSelect';
+import LevelSelect from '@/components/LevelSelect';
+import OutputBox from '@/components/OutputBox';
+import HistoryPanel, { BrandMark } from '@/components/HistoryPanel';
+import { EXAMPLES } from '@/lib/examples';
+import { cn } from '@/lib/utils';
 
 export default function HomePage() {
   const [chats, setChats] = useState([]);
@@ -27,6 +28,14 @@ export default function HomePage() {
 
   // NEW: hold uploaded attachments (images OR pdfs)
   const [attachments, setAttachments] = useState([]);
+
+  // Redesign: reading-view state
+  const [resultMeta, setResultMeta] = useState({ domain: 'general', level: 'intermediate' });
+  const [resultSource, setResultSource] = useState({ text: '', fileName: null });
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const textareaRef = useRef(null);
 
   const MAX_CHARS = 10_000;
 
@@ -244,7 +253,11 @@ function fixHelpfulDefinitionsFormatting(s) {
 
   const activeChat = chats.find((chat) => chat.id === activeChatId);
 
-  async function handleSimplify() {
+  async function handleSimplify(opts = {}) {
+  // Re-runs from the reading view can override domain / level without waiting for state.
+  const useDomain = opts.domain ?? domain;
+  const useLevel = opts.level ?? level;
+
   // decide: prefer latest file (pdf or image); else simplify text
   const latest = attachments.slice().reverse().find(a => a.mime);
   const img = latest && latest.mime.startsWith('image/') ? latest : null;
@@ -255,6 +268,9 @@ function fixHelpfulDefinitionsFormatting(s) {
   setLoading(true);
   setSimplifiedText('');
   setServiceNotice(null);
+  setResultMeta({ domain: useDomain, level: useLevel });
+  setResultSource({ text, fileName: (pdf || img)?.name || null });
+  setSourceOpen(false);
 
   try {
     let res, raw, data, simplified, full;
@@ -297,7 +313,7 @@ function fixHelpfulDefinitionsFormatting(s) {
         res = await fetch('/api/analyze-image', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pdfText, level }),
+          body: JSON.stringify({ pdfText, level: useLevel }),
         });
 
         if (res.ok && res.body) {
@@ -337,7 +353,7 @@ Request failed: Could not extract text from the PDF.
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
-          dataUrl ? { dataUrl, level } : { imageUrl: img.previewUrl, level }
+          dataUrl ? { dataUrl, level: useLevel } : { imageUrl: img.previewUrl, level: useLevel }
         ),
       });
 
@@ -379,7 +395,7 @@ N/A`);
        });
 
      // Try #1: full JSON (common for many implementations)
-     res = await sendJson({ text: cleanText, domain, level });
+     res = await sendJson({ text: cleanText, domain: useDomain, level: useLevel });
      if (!res.ok) {
        // Try #2: minimal JSON body
        res = await sendJson({ text: cleanText });
@@ -452,7 +468,7 @@ Your input is too long to simplify in one go. The limit is ${lim} characters, bu
 
   // try a series of bodies your API might accept
   const attempts = [
-    j({ text: cleanText, domain, level }),   // common shape
+    j({ text: cleanText, domain: useDomain, level: useLevel }),   // common shape
     j({ text: cleanText }),                  // minimal JSON
     j({ content: cleanText }),               // alt key
     j({ input: cleanText }),                 // alt key
@@ -532,28 +548,35 @@ N/A`);
       full = simplified; // for history
     }
 
-    // Save to history (unchanged logic)
+    // Save to history. If no chat is active yet (first visit), start one so
+    // the result isn't lost.
     const timestamp = new Date().toISOString();
-    const updatedChats = chats.map((chat) =>
-      chat.id === activeChatId
-        ? {
-            ...chat,
-            history: [
-              ...chat.history,
-              {
-                id: Date.now().toString(),
-                text,
-                domain,
-                level,
-                result: full,
-                timestamp,
-              },
-            ],
-            title: chat.title || text.slice(0, 30),
-          }
-        : chat
-    );
-    setChats(updatedChats);
+    const fileName = (pdf || img)?.name || null;
+    const entry = {
+      id: Date.now().toString(),
+      text,
+      domain: useDomain,
+      level: useLevel,
+      result: full,
+      timestamp,
+      ...(fileName ? { fileName } : {}),
+    };
+    const targetId = chats.some((c) => c.id === activeChatId) ? activeChatId : uuidv4();
+    if (targetId !== activeChatId) setActiveChatId(targetId);
+    setChats((prev) => {
+      const base = prev.some((c) => c.id === targetId)
+        ? prev
+        : [{ id: targetId, title: '', history: [], createdAt: timestamp }, ...prev];
+      return base.map((chat) =>
+        chat.id === targetId
+          ? {
+              ...chat,
+              history: [...chat.history, entry],
+              title: chat.title || text.slice(0, 30) || fileName || '',
+            }
+          : chat
+      );
+    });
   } catch (err) {
     console.error('simplify/analyze caught exception:', err);
     setSimplifiedText(`1. Summary
@@ -573,7 +596,7 @@ N/A`);
 
 
   const handleNewChat = () => {
-    const newChat = { id: uuidv4(), title: '', history: [] };
+    const newChat = { id: uuidv4(), title: '', history: [], createdAt: new Date().toISOString() };
     setChats([newChat, ...chats]);
     setActiveChatId(newChat.id);
     setText('');
@@ -581,6 +604,8 @@ N/A`);
     setAttachments([]);       // reset attachments for a fresh chat
     setShowSideBySide(false); // reset compare view for a fresh chat
     setPreviewSrc(null);
+    setSourceOpen(false);
+    setResultSource({ text: '', fileName: null });
   };
 
   const handleSelectChat = (id) => {
@@ -592,10 +617,14 @@ N/A`);
       setDomain(last.domain);
       setLevel(last.level || 'intermediate');
       setSimplifiedText(last.result);
+      setResultMeta({ domain: last.domain || 'general', level: last.level || 'intermediate' });
+      setResultSource({ text: last.text || '', fileName: last.fileName || null });
     } else {
       setText('');
       setSimplifiedText('');
+      setResultSource({ text: '', fileName: null });
     }
+    setSourceOpen(false);
     if (!(chat?.history?.length > 0)) setShowSideBySide(false);
   };
 
@@ -626,8 +655,149 @@ N/A`);
 
   const latestAtt = attachments[attachments.length - 1];
 
+  /* ------------------------------------------------------------------------ */
+  /* Redesign helpers                                                          */
+  /* ------------------------------------------------------------------------ */
+
+  const submitText =
+    text ||
+    (attachments.some((a) => a.mime?.startsWith('image/')) ? 'image'
+      : attachments.some((a) => a.mime === 'application/pdf') ? 'pdf'
+      : '');
+
+  const hasResult = Boolean(simplifiedText) || loading;
+  const compareAvailable = Boolean(text.trim());
+  const compareActive = showSideBySide && compareAvailable && canCompare;
+  const canRerun = Boolean(text.trim()) || attachments.length > 0;
+  const dirty = text !== resultSource.text;
+
+  function rerunWith(changes) {
+    if (changes.domain) setDomain(changes.domain);
+    if (changes.level) setLevel(changes.level);
+    if (!canRerun || loading) return;
+    handleSimplify(changes);
+  }
+
+  function setCompare(val) {
+    if (!text.trim()) return;
+    setShowSideBySide(val);
+  }
+
+  function applyExample(example) {
+    setText(example.text);
+    setDomain(example.domain);
+    // After React re-renders (the example list unmounts once text is filled).
+    setTimeout(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(0, 0);
+      el.scrollTop = 0;
+      el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }, 0);
+  }
+
+  function previewLatest() {
+    const a = latestAtt;
+    if (a?.file) {
+      const reader = new FileReader();
+      reader.onload = () => setPreviewSrc(reader.result);
+      reader.readAsDataURL(a.file);
+    } else {
+      setPreviewSrc(a?.viewUrl || a?.publicUrl || null);
+    }
+  }
+
+  function closePreview() {
+    if (previewSrc?.startsWith('blob:')) {
+      try { URL.revokeObjectURL(previewSrc); } catch {}
+    }
+    setPreviewSrc(null);
+  }
+
+  async function copyResult() {
+    try {
+      await navigator.clipboard.writeText(simplifiedText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setErrorMsg('Couldn’t copy to the clipboard.');
+      clearErrorSoon();
+    }
+  }
+
+  const composerProps = {
+    textareaRef,
+    text,
+    onTextChange: (e) => setText(e.target.value),
+    onSubmit: () => handleSimplify(),
+    submitText,
+    loading,
+    maxChars: MAX_CHARS,
+    domain,
+    onDomainChange: setDomain,
+    level,
+    onLevelChange: setLevel,
+    attachment: latestAtt,
+    onUploaded: handleUploaded,
+    onUploadError: (msg) => {
+      setErrorMsg(msg);
+      clearErrorSoon();
+    },
+    onPreview: previewLatest,
+    onRemoveAttachment: () => {
+      setAttachments([]);
+      setPreviewSrc(null);
+    },
+    previewSrc,
+    onClosePreview: closePreview,
+  };
+
+  const wordCount = (resultSource.text || '').trim().split(/\s+/).filter(Boolean).length;
+  const sourceMeta = resultSource.fileName
+    ? resultSource.fileName
+    : wordCount > 0
+      ? `${wordCount.toLocaleString()} ${wordCount === 1 ? 'word' : 'words'}`
+      : '';
+
+  const banners = (
+    <>
+      {/* Service notice banner (429/503, etc.) */}
+      {serviceNotice && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mb-4 rounded-lg border border-amber-300/30 bg-amber-300/10 px-4 py-3 text-sm font-medium text-amber-100"
+        >
+          {serviceNotice}
+        </div>
+      )}
+
+      {/* Inline error banner */}
+      {errorMsg && (
+        <div
+          role="alert"
+          className="mb-4 rounded-lg border border-red-400/35 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-200"
+        >
+          {errorMsg}
+        </div>
+      )}
+    </>
+  );
+
+  /* ------------------------------------------------------------------------ */
+  /* Render                                                                    */
+  /* ------------------------------------------------------------------------ */
+
   return (
-    <div className="flex h-screen">
+    <div className="flex min-h-dvh w-full lg:h-dvh lg:overflow-hidden">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[80] focus:rounded-md focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:text-ink-900"
+      >
+        Skip to content
+      </a>
+
       <HistoryPanel
         chats={chats}
         activeChatId={activeChatId}
@@ -635,250 +805,233 @@ N/A`);
         onNewChat={handleNewChat}
         onDeleteChat={handleDeleteChat}
         onRenameChat={handleRenameChat}
+        mobileOpen={mobileNavOpen}
+        onMobileClose={() => setMobileNavOpen(false)}
       />
 
-      <main className="flex-1 overflow-y-auto pt-9 px-14 pb-14 font-inter text-base text-blue-500 max-w-[1100px] mx-auto">
-        <div className="mb-8">
-          <h1 className="font-geist text-4xl font-extrabold text-center tracking-tight mb-1">
-            <span className="bg-gradient-to-r from-blue-500 to-cyan-300 bg-clip-text text-transparent">
-              Understand.
-            </span>{' '}
-            <span className="bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 bg-clip-text text-transparent">
-              Unjargon.
-            </span>
-          </h1>
-
-          <p className="text-center italic text-lg font-semibold
-            bg-gradient-to-r from-cyan-100 via-blue-300 to-indigo-600 bg-clip-text text-transparent">
-            Where clarity meets understanding.
-          </p>
-        </div>
-
-        {/* 🔔 Service notice banner (429/503, etc.) */}
-        {serviceNotice && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="mb-4 rounded-lg border border-yellow-400 bg-yellow-50/70 p-3 text-yellow-900 font-medium text-center"
+      <div className="flex min-w-0 flex-1 flex-col lg:overflow-y-auto">
+        {/* Mobile / tablet top bar */}
+        <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-line bg-ink-900/90 px-2 backdrop-blur-md lg:hidden">
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(true)}
+            aria-label="Open menu and chat history"
+            className="grid size-11 place-items-center rounded-lg text-text-soft hover:bg-white/[0.06]"
           >
-            {serviceNotice}
-          </div>
-        )}
+            <Menu className="size-5" aria-hidden="true" />
+          </button>
+          <BrandMark className="text-[1.15rem]" />
+          <button
+            type="button"
+            onClick={handleNewChat}
+            aria-label="Start new chat"
+            className="grid size-11 place-items-center rounded-lg text-brand-cyan hover:bg-white/[0.06]"
+          >
+            <Plus className="size-5" aria-hidden="true" />
+          </button>
+        </header>
 
-        {/* Inline error banner */}
-        {errorMsg && (
-          <div className="mb-9 rounded-md border-2 border-red-400 bg-red-50/80 px-3 py-4 text-red-800 text-medium font-semibold">
-            {errorMsg}
-          </div>
-        )}
+        <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[1120px] flex-1 px-4 pb-20 focus:outline-none sm:px-6 lg:px-10">
+          {!hasResult ? (
+            /* ------------------------------ Home ------------------------------ */
+            <div className="mx-auto max-w-[880px] pt-8 sm:pt-16 lg:pt-20">
+              <h1 className="font-display text-[2.75rem] font-bold leading-[1.04] tracking-[-0.035em] sm:text-center sm:text-6xl lg:text-[4.5rem]">
+                <span className="text-text">Understand.</span>{' '}
+                <br className="sm:hidden" />
+                <span className="text-gradient-brand">Unjargon.</span>
+              </h1>
+              <p className="mt-3 text-[1.0625rem] text-text-soft sm:mt-4 sm:text-center sm:text-lg">
+                Where clarity meets understanding.
+              </p>
 
-
-        {/* Control Row */}
-        <div className="flex flex-wrap items-stretch gap-6 mb-4">
-          <div className="flex flex-col justify-end h-[84px]">
-            <DomainSelect value={domain} onChange={setDomain} />
-          </div>
-
-          <div className="flex flex-col justify-end h-[84px]">
-            <LevelSelect value={level} onChange={setLevel} />
-          </div>
-
-          <div className="flex flex-col justify-end h-[73px]">
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-semibold text-gray-300">Side-by-Side</span>
-              <Switch
-                checked={showSideBySide}
-                onChange={(val) => {
-                  if (!text.trim() || !canCompare) return;
-                  setShowSideBySide(val);
-                }}
-                disabled={!text.trim() || !canCompare || loading}
-                className={`${showSideBySide ? 'bg-green-500' : 'bg-gray-600'} ${
-                  (!text.trim() || !canCompare) ? 'opacity-40 cursor-not-allowed' : ''
-                } relative inline-flex h-6 w-11 items-center rounded-full transition-colors`}
-              >
-                <span
-                  className={`${showSideBySide ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition`}
+              <div className="mt-8 sm:mt-10">
+                {banners}
+                <Composer
+                  {...composerProps}
+                  showCompare
+                  compare={showSideBySide && compareAvailable}
+                  onCompareChange={setCompare}
+                  compareDisabled={!compareAvailable}
+                  showTip={showTip}
+                  onDismissTip={dismissTip}
                 />
-              </Switch>
-            </div>
-            <p className="text-xs font-semibold text-gray-400 mt-1">Toggle side-by-side comparison</p>
-          </div>
-        </div>
+              </div>
 
-        {/* Upload row */}
-        <div className="mt-2 mb-3">
-          <UploadBox onUploaded={handleUploaded} disabled={loading} />
-        </div>
-
-        {attachments.length > 0 && (
-          <div className="mt-3 flex items-center justify-between max-w-md p-2 pl-3 rounded-lg bg-gray-100/10 border border-gray-700 backdrop-blur-sm">
-            <div className="flex items-center gap-3 overflow-hidden">
-              <span className="text-sm text-gray-300 truncate">
-                {latestAtt.file?.name || latestAtt.name || 'Uploaded file'}{' '}
-                • {latestAtt.mime?.split('/')[1]?.toUpperCase() || 'FILE'}
-                • {Math.round(((latestAtt.file?.size || latestAtt.size) / 102.4)) / 10} KB
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {/* Preview button */}
-              <button
-                type="button"
-                onClick={() => {
-                  const a = latestAtt;
-                  if (a?.file) {
-                    const reader = new FileReader();
-                    reader.onload = () => setPreviewSrc(reader.result);
-                    reader.readAsDataURL(a.file);
-                  } else {
-                    setPreviewSrc(a.viewUrl || a.publicUrl || null);
-                  }
-                }}
-                className="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-gradient-to-r from-blue-500 to-cyan-400 hover:from-blue-400 hover:to-cyan-300 border border-blue-400 transition-colors"
-              >
-                Preview
-              </button>
-
-              {/* Remove button */}
-              <button
-                type="button"
-                onClick={() => {
-                  setAttachments([]);
-                  setPreviewSrc(null);
-                }}
-                className="px-3 py-1.5 rounded-md text-xs font-semibold text-gray-300 border border-gray-500 hover:bg-gray-700 transition-colors"
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-        )}
-
-        {previewSrc && (
-          <div className="mt-3 p-3 rounded-lg bg-slate-800 border border-slate-700">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-semibold text-gray-200">File preview</span>
-              <button
-                className="px-3 py-1.5 text-gray-300 text-xs font-semibold rounded bg-slate-700 border border-gray-500 hover:bg-slate-600"
-                onClick={() => {
-                  if (previewSrc.startsWith('blob:')) {
-                    try { URL.revokeObjectURL(previewSrc); } catch {}
-                  }
-                  setPreviewSrc(null);
-                }}
-              >
-                Close
-              </button>
-            </div>
-            <div className="max-h-96 overflow-auto rounded bg-black/20 p-2">
-              {latestAtt?.mime === 'application/pdf' ? (
-                // PDF preview (best-effort: blob/data URLs generally work)
-                <iframe
-                  src={previewSrc}
-                  title="PDF preview"
-                  className="w-full h-96 rounded"
-                />
-              ) : (
-                <img
-                  src={previewSrc}
-                  alt="Attachment preview"
-                  className="max-h-96 mx-auto object-contain"
-                />
+              {!text.trim() && attachments.length === 0 && (
+                <section aria-labelledby="examples-heading" className="mt-12 sm:mt-16">
+                  <div className="flex items-baseline justify-between gap-4">
+                    <h2 id="examples-heading" className="font-display text-lg font-semibold text-text">
+                      New here? Start with an example.
+                    </h2>
+                    <p className="hidden text-sm text-text-muted sm:block">Each one sets the domain for you</p>
+                  </div>
+                  <ul className="scrollbar-none -mx-4 mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-4">
+                    {EXAMPLES.map((ex) => {
+                      const d = DOMAINS.find((x) => x.value === ex.domain) || DOMAINS[0];
+                      const Icon = d.icon;
+                      return (
+                        <li key={ex.id} className="w-[78%] shrink-0 snap-start sm:w-auto">
+                          <button
+                            type="button"
+                            onClick={() => applyExample(ex)}
+                            aria-label={`Use example: ${ex.title} (${d.label})`}
+                            className="flex h-full w-full flex-col rounded-xl border border-line bg-ink-850 p-4 text-left transition-colors hover:border-line-strong hover:bg-ink-800"
+                          >
+                            <span className="flex items-center gap-2 text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-text-soft">
+                              <Icon className="size-3.5 text-brand-cyan" aria-hidden="true" />
+                              {d.label}
+                            </span>
+                            <span className="mt-2 block font-display text-[1.0625rem] font-semibold text-text">
+                              {ex.title}
+                            </span>
+                            <span className="mt-1.5 line-clamp-3 text-sm leading-relaxed text-text-muted">
+                              {ex.text}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
               )}
             </div>
-          </div>
-        )}
+          ) : (
+            /* ---------------------------- Results ----------------------------- */
+            <div className="pt-4 sm:pt-6 lg:pt-8">
+              {banners}
 
-        <div className="flex flex-col justify-end h-[50px] mt-6 relative">
-          <div className="relative w-full [&>button]:w-full [&>button]:block">
-            <SimplifyButton
-            onClick={handleSimplify}
-              loading={loading}
-              text={
-              text ||
-              (attachments.some(a => a.mime?.startsWith('image/')) ? 'image'
-              : attachments.some(a => a.mime === 'application/pdf') ? 'pdf'
-              : '')
-           }
-         />
-
-            {/* First-visit popover */}
-            {showTip && (
-              <>
-                <div
-                  className="fixed inset-0 bg-black/40 z-40"
-                  onClick={dismissTip}
-                />
-                <div
-                  role="dialog"
-                  aria-label="Unjargon tip"
-                  className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 z-50
-                            max-w-xs px-4 py-3 rounded-xl text-sm leading-snug
-                            text-white bg-slate-900/90 backdrop-blur border-3 border-white/10 shadow-lg"
-                >
-                  <div className="font-semibold mb-1">Unjargon = Simplify</div>
-                  <div>
-                    Click this button to turn jargon into clear language.
-                    Works for text, images, and PDFs you upload.
-                  </div>
-                  <div
-                    className="absolute left-1/2 top-full -translate-x-1/2 mt-[2px] sm:mt-[3px]
-                              w-[10px] h-[10px] sm:w-[12px] sm:h-[12px]
-                              bg-slate-900/90 border-r border-b border-white/10 rotate-45
-                              rounded-[1px]"
-                    style={{ transformOrigin: 'center top', boxShadow: '0 1px 2px rgba(0,0,0,0.15)' }}
+              {/* Toolbar */}
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="order-2 flex flex-wrap items-center gap-2 md:order-1">
+                  <DomainSelect
+                    value={domain}
+                    onChange={(v) => rerunWith({ domain: v })}
+                    disabled={loading}
                   />
-                  <div className="mt-3 flex items-center gap-2">
+                  <LevelSelect
+                    value={level}
+                    onChange={(v) => rerunWith({ level: v })}
+                    disabled={loading}
+                  />
+                </div>
+
+                <div className="order-1 flex items-center gap-2 md:order-2">
+                  <div
+                    role="group"
+                    aria-label="View"
+                    className="grid flex-1 grid-cols-2 rounded-xl border border-line bg-ink-850 p-1 md:flex-none"
+                  >
                     <button
                       type="button"
-                      onClick={dismissTip}
-                      className="px-3 py-1 rounded-md text-xs font-semibold
-                                bg-white/90 text-slate-900 hover:bg-white"
+                      aria-pressed={!compareActive}
+                      onClick={() => setShowSideBySide(false)}
+                      className={cn(
+                        'inline-flex h-8 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors',
+                        !compareActive ? 'bg-ink-700 text-text' : 'text-text-muted hover:text-text'
+                      )}
                     >
-                      Got it
+                      <AlignLeft className="size-4" aria-hidden="true" />
+                      Reading
                     </button>
-                    <span className="text-[11px] text-white/70">(Shown only once)</span>
+                    <button
+                      type="button"
+                      aria-pressed={compareActive}
+                      onClick={() => setCompare(true)}
+                      disabled={!compareAvailable || !canCompare}
+                      title={!compareAvailable ? 'Side-by-side needs pasted text' : undefined}
+                      className={cn(
+                        'inline-flex h-8 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors',
+                        compareActive ? 'bg-ink-700 text-text' : 'text-text-muted hover:text-text',
+                        'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-text-muted'
+                      )}
+                    >
+                      <Columns2 className="size-4" aria-hidden="true" />
+                      Side by side
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={copyResult}
+                    disabled={!simplifiedText || loading}
+                    aria-label={copied ? 'Copied' : 'Copy explanation'}
+                    title="Copy explanation"
+                    className="grid size-10 shrink-0 place-items-center rounded-xl border border-line bg-ink-850 text-text-soft hover:bg-ink-800 hover:text-text disabled:opacity-40"
+                  >
+                    {copied ? (
+                      <Check className="size-4 text-brand-cyan" aria-hidden="true" />
+                    ) : (
+                      <Copy className="size-4" aria-hidden="true" />
+                    )}
+                  </button>
+                  <span className="sr-only" role="status" aria-live="polite">
+                    {copied ? 'Explanation copied' : ''}
+                  </span>
+                </div>
+              </div>
+
+              {/* Your text */}
+              {!compareActive && (
+                <div className="mt-4 rounded-xl border border-line bg-ink-850">
+                  <button
+                    type="button"
+                    aria-expanded={sourceOpen}
+                    aria-controls="source-panel"
+                    onClick={() => setSourceOpen((v) => !v)}
+                    className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left hover:bg-white/[0.02]"
+                  >
+                    <FileText className="size-4 shrink-0 text-brand-cyan" aria-hidden="true" />
+                    <span className="text-sm font-semibold text-text">Your text</span>
+                    {sourceMeta && <span className="min-w-0 truncate text-sm text-text-muted">{sourceMeta}</span>}
+                    <span className="ml-auto inline-flex shrink-0 items-center gap-1 text-sm text-text-soft">
+                      {sourceOpen ? 'Hide' : 'Show'}
+                      <ChevronDown
+                        className={cn('size-4 transition-transform', sourceOpen && 'rotate-180')}
+                        aria-hidden="true"
+                      />
+                    </span>
+                  </button>
+                  <div id="source-panel" hidden={!sourceOpen} className="border-t border-line p-3 sm:p-4">
+                    {sourceOpen && (
+                      <Composer
+                        {...composerProps}
+                        showSelects={false}
+                        submitLabel="Unjargon again"
+                        rows={6}
+                      />
+                    )}
                   </div>
                 </div>
-              </>
-            )}
-          </div>
-        </div>
+              )}
 
-        {/* Output area */}
-        {!showSideBySide ? (
-          <div className="mt-6">
-            <TextInput value={text} onChange={(e) => setText(e.target.value)} rows={12} />
-              <div className="mt-1 text-right text-xs font-semibold"
-                  style={{ color: (text?.length ?? 0) > MAX_CHARS ? '#ef4444' : '#9ca3af' }}>
-                {(text?.length ?? 0).toLocaleString()} / {MAX_CHARS.toLocaleString()}
-              </div>
-            <OutputBox text={simplifiedText} />
-          </div>
-        ) : (
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Left: Editable Original */}
-            <div className="relative p-[7px] mt-3 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-400 shadow-md">
-              <div className="bg-white rounded-[10px] p-5 h-full flex flex-col">
-                <h2 className="text-lg font-semibold mb-2 text-blue-600">Original</h2>
-                <textarea
-                  className="flex-1 w-full p-3 border border-blue-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  rows={12}
-                  placeholder="Type or paste text here..."
-                />
+              {/* Reading surface */}
+              <div className="mt-5">
+                {compareActive ? (
+                  <CompareView
+                    text={text}
+                    onTextChange={(e) => setText(e.target.value)}
+                    resultText={simplifiedText}
+                    meta={resultMeta}
+                    loading={loading}
+                    dirty={dirty && Boolean(text.trim())}
+                    onRerun={() => handleSimplify()}
+                    onChangeLevel={(v) => rerunWith({ level: v })}
+                    canChangeLevel={canRerun}
+                  />
+                ) : (
+                  <OutputBox
+                    text={simplifiedText}
+                    meta={resultMeta}
+                    loading={loading}
+                    onChangeLevel={(v) => rerunWith({ level: v })}
+                    canChangeLevel={canRerun}
+                  />
+                )}
               </div>
             </div>
-
-            {/* Right: Simplified Output */}
-            <div className="-mt-3">
-              <OutputBox text={simplifiedText} />
-            </div>
-          </div>
-        )}
-      </main>
+          )}
+        </main>
+      </div>
     </div>
   );
 }

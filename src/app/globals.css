@@ -1,44 +1,177 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* ---------------------------------------------------------------------------
+   Unjargon design tokens
+   Dark navy workspace, light reading paper, blue / cyan / violet accents.
+--------------------------------------------------------------------------- */
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-geist-sans), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-source-serif), ui-serif, Georgia, "Times New Roman", serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
 
-::-webkit-scrollbar {
-  width: 10px; /* thickness of the scrollbar */
+  /* Workspace (dark) */
+  --color-ink-950: #070b18;
+  --color-ink-900: #0a0f21;
+  --color-ink-850: #0d1329;
+  --color-ink-800: #121a36;
+  --color-ink-750: #172043;
+  --color-ink-700: #1d2852;
+  --color-ink-600: #2a3770;
+  --color-line: rgb(148 163 209 / 0.14);
+  --color-line-strong: rgb(148 163 209 / 0.24);
+  --color-text: #e8ebf6;
+  --color-text-soft: #b4bcd8;
+  --color-text-muted: #8590b3;
+
+  /* Reading surface (light) */
+  --color-paper: #f8f9fc;
+  --color-paper-tint: #eef1f9;
+  --color-paper-ink: #141a33;
+  --color-paper-body: #2a3150;
+  --color-paper-muted: #5b6487;
+  --color-paper-line: #e1e5f0;
+
+  /* Brand accents */
+  --color-brand-blue: #4a7bff;
+  --color-brand-cyan: #3ccbea;
+  --color-brand-violet: #8b5cf6;
+  --color-brand-blue-ink: #2f5fe6;
+  --color-brand-violet-ink: #6d43d9;
+
+  /* Used by the static pages (about, contact, terms) */
+  --color-muted-foreground: #9aa3c2;
 }
 
-::-webkit-scrollbar-track {
-  background: #0f172a; /* track color (behind the thumb) — e.g. slate-900 */
-  border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, #3b82f6, #0797b1); /* blue → cyan gradient */
-  border-radius: 10px;
-  border: 2px solid #0f172a; /* matches track for a smooth inset look */
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(to bottom, #2563eb, #02647c); /* darker on hover */
-}
-
-/* Font classes */
 @layer base {
   html {
-    font-family: var(--font-inter, sans-serif);
-  }
-
-  h1, h2, h3, .font-geist {
-    font-family: var(--font-geist-sans), sans-serif;
-  }
-
-  code, .font-geistMono {
-    font-family: var(--font-geist-mono), monospace;
+    color-scheme: dark;
+    -webkit-text-size-adjust: 100%;
   }
 
   body {
-    @apply bg-gray-900 text-white antialiased;
+    background-color: var(--color-ink-900);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-display);
+  }
+
+  code, kbd {
+    font-family: var(--font-mono);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand-cyan);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: rgb(74 123 255 / 0.35);
+  }
+}
+
+/* Brand gradient, used sparingly: headline word, primary action, point numbers. */
+@utility text-gradient-brand {
+  background-image: linear-gradient(95deg, #4a7bff 0%, #6f6bff 45%, #9a5cf6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@utility bg-gradient-brand {
+  background-image: linear-gradient(95deg, #3d6dff 0%, #5f5cf9 55%, #8b4ff2 100%);
+}
+
+/* Hide scrollbars on horizontal rails while keeping them scrollable. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Quiet, thin scrollbars that sit back in the navy workspace. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(148 163 209 / 0.28) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(148 163 209 / 0.25);
+  border-radius: 10px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(148 163 209 / 0.4);
+  background-clip: padding-box;
+}
+
+/* Markdown rendered inside the light reading surface. */
+.reading-md > * + * {
+  margin-top: 0.9em;
+}
+.reading-md strong {
+  font-weight: 600;
+  color: var(--color-paper-ink);
+}
+.reading-md em {
+  font-style: normal;
+}
+.reading-md ul {
+  list-style: disc;
+  padding-left: 1.25em;
+}
+.reading-md ol {
+  list-style: decimal;
+  padding-left: 1.4em;
+}
+.reading-md li + li {
+  margin-top: 0.35em;
+}
+.reading-md a {
+  color: var(--color-brand-blue-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.reading-md code {
+  font-size: 0.9em;
+  background: var(--color-paper-tint);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+.reading-md h1,
+.reading-md h2,
+.reading-md h3 {
+  font-weight: 600;
+  color: var(--color-paper-ink);
+  margin-top: 1.4em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

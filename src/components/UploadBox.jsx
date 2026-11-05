@@ -1,6 +1,7 @@
 'use client';
 
-import { useRef, useState, useMemo } from 'react';
+import { useRef, useState } from 'react';
+import { LoaderCircle, Upload } from 'lucide-react';
 
 const MAX_BYTES = 3_000_000; // 2MB cap (same as server)
 const ALLOWED_MIME = new Set([
@@ -12,16 +13,15 @@ const ALLOWED_MIME = new Set([
 ]);
 const ALLOWED_EXT = new Set(['.jpeg', '.jpg', '.png', '.webp', '.pdf']);
 
-export default function UploadBox({ onUploaded, disabled }) {
+export default function UploadBox({ onUploaded, disabled, onError, compact = false }) {
   const inputRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
-  // Very light iOS detection: avoid forcing camera so users see the full sheet.
-  const isiOS = useMemo(() => {
-    if (typeof window === 'undefined') return false;
-    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-  }, []);
+  function reportError(msg) {
+    if (onError) onError(msg);
+    else setErrorMsg(msg);
+  }
 
   function clearErrorSoon() {
     // soft-clear after a short delay so message is readable but not sticky
@@ -105,7 +105,7 @@ export default function UploadBox({ onUploaded, disabled }) {
       );
     } catch (e) {
       console.error('Upload failed:', e);
-      setErrorMsg(e.message || 'Upload failed.');
+      reportError(e.message || 'Upload failed.');
       clearErrorSoon();
     } finally {
       setBusy(false);
@@ -120,13 +120,13 @@ export default function UploadBox({ onUploaded, disabled }) {
 
     // Client-side validation BEFORE any network call:
     if (!isAllowed(f)) {
-      setErrorMsg('Unsupported file type. Please upload JPG, JPEG, PNG, WEBP, or PDF.');
+      reportError('Unsupported file type. Please upload JPG, JPEG, PNG, WEBP, or PDF.');
       clearErrorSoon();
       return;
     }
 
     if (f.size > MAX_BYTES) {
-      setErrorMsg(
+      reportError(
         `File too large (${humanSize(f.size)}). Maximum size allowed is ${humanSize(MAX_BYTES)}.`
       );
       clearErrorSoon();
@@ -137,41 +137,44 @@ export default function UploadBox({ onUploaded, disabled }) {
   }
 
   return (
-    <div className="mt-4">
-      <label className="block text-lg font-bold text-gray-300 mb-2">
-        Upload file / photo
-      </label>
+    <div className="relative">
+      {/* Hidden file input — the actual selector */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/jpg,image/png,image/webp,application/pdf"
+        className="hidden"
+        onChange={handlePick}
+        tabIndex={-1}
+        aria-hidden="true"
+      />
 
-      {/* Inline error banner */}
-      {errorMsg && (
-        <div className="mb-2 rounded-md border border-red-400 bg-red-50/80 px-3 py-2 text-red-900 text-sm">
+      {/* Button that opens the hidden input */}
+      <button
+        type="button"
+        disabled={busy || disabled}
+        onClick={() => inputRef.current?.click()}
+        aria-label={compact ? (busy ? 'Uploading file' : 'Upload file or photo') : undefined}
+        title="Upload a PDF or image (JPG, PNG, WEBP · up to 3 MB)"
+        className="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-white/[0.04] px-2.5 text-sm font-medium text-text sm:px-3
+                   hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {busy ? (
+          <LoaderCircle className="size-4 motion-safe:animate-spin text-text-soft" aria-hidden="true" />
+        ) : (
+          <Upload className="size-4 text-text-soft" aria-hidden="true" />
+        )}
+        <span className={compact ? 'sr-only sm:not-sr-only' : undefined}>
+          {busy ? 'Uploading…' : 'Upload file / photo'}
+        </span>
+      </button>
+
+      {/* Inline error (only when the parent doesn't handle errors itself) */}
+      {errorMsg && !onError && (
+        <div role="alert" className="absolute left-0 top-full z-20 mt-2 w-72 rounded-lg border border-red-400/40 bg-ink-800 px-3 py-2 text-sm text-red-200 shadow-xl">
           {errorMsg}
         </div>
       )}
-
-      <div className="flex items-center gap-3">
-        {/* Hidden file input — the actual selector */}
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/jpeg,image/jpg,image/png,image/webp,application/pdf"
-          className="hidden"
-          onChange={handlePick}
-          {...(!isiOS ? {} : {})}
-        />
-
-        {/* Button that opens the hidden input */}
-        <button
-          type="button"
-          disabled={busy || disabled}
-          onClick={() => inputRef.current?.click()}
-          className="rounded-lg px-4 py-1.5 font-semibold bg-cyan-500 hover:bg-cyan-600 text-white
-                     focus:outline-none focus:ring-2 focus:ring-cyan-400
-                     disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {busy ? 'Uploading…' : 'Upload'}
-        </button>
-      </div>
     </div>
   );
 }

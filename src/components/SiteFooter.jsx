@@ -2,9 +2,14 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 export default function SiteFooter() {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+
+  // The app route has its own sidebar / mobile navigation.
+  if (pathname === '/') return null;
 
   return (
     <footer className="relative w-full border-t border-white/10 bg-slate-900/60 backdrop-blur text-gray-300">

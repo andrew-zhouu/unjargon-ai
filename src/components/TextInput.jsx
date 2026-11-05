@@ -1,16 +1,27 @@
-export default function TextInput({ value, onChange }) {
+import { forwardRef } from 'react';
+import { cn } from '@/lib/utils';
+
+const TextInput = forwardRef(function TextInput(
+  { value, onChange, onKeyDown, rows = 8, className, ...props },
+  ref
+) {
   return (
     <textarea
-      className="w-full p-5 border-2 border-blue-400 rounded-xl 
-                 text-white font-semibold bg-gray-800 
-                 placeholder-gray-400 
-                 focus:outline-none focus:ring-2 focus:ring-cyan-500 
-                 transition duration-150 resize-none"
-      placeholder="Paste complicated text here..."
+      ref={ref}
+      aria-label="Text to unjargon"
+      className={cn(
+        "block w-full resize-y bg-transparent px-5 pt-5 pb-3 text-[1.0625rem] leading-relaxed text-text",
+        "placeholder:text-text-muted focus:outline-none",
+        className
+      )}
+      placeholder="Paste complicated text here…"
       value={value}
       onChange={onChange}
-      rows={12}
+      onKeyDown={onKeyDown}
+      rows={rows}
+      {...props}
     />
   );
-}
+});
 
+export default TextInput;

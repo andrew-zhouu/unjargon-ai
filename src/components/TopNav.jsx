@@ -2,9 +2,14 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 export default function TopNav() {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+
+  // The app route has its own sidebar / mobile navigation.
+  if (pathname === '/') return null;
 
   return (
     <nav className="relative w-full bg-transparent text-white">
