@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import {
   Dialog,
@@ -14,6 +15,7 @@ import {
 import {
   Ellipsis,
   History,
+  Info,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
@@ -213,6 +215,13 @@ function PanelBody({ chats, activeChatId, onSelectChat, onNewChat, onDeleteChat,
           <Plus className="size-4 text-brand-cyan" aria-hidden="true" />
           Start new chat
         </button>
+        <Link
+          href="/about-us"
+          className="mt-1 flex h-10 w-full items-center gap-2.5 rounded-lg px-3 text-sm font-medium text-text-soft hover:bg-white/[0.05] hover:text-text"
+        >
+          <Info className="size-4 text-text-muted" aria-hidden="true" />
+          About Unjargon
+        </Link>
       </div>
 
       <nav aria-label="Chat history" className="mt-4 min-h-0 flex-1 overflow-y-auto px-3 pb-4">
@@ -248,12 +257,38 @@ function PanelBody({ chats, activeChatId, onSelectChat, onNewChat, onDeleteChat,
 
       <div className="border-t border-line px-6 py-4">
         <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-[0.8125rem] text-text-muted">
-          <li><Link href="/about-us" className="hover:text-text">About</Link></li>
           <li><Link href="/contact" className="hover:text-text">Contact</Link></li>
           <li><Link href="/terms" className="hover:text-text">Terms</Link></li>
           <li><Link href="/privacy" className="hover:text-text">Privacy</Link></li>
         </ul>
       </div>
+    </div>
+  );
+}
+
+/* Icon button for the collapsed rail, with a tooltip on hover and focus. */
+function RailButton({ label, href, onClick, className, children, ...props }) {
+  const cls = cn(
+    'peer grid size-10 place-items-center rounded-lg text-text-soft hover:bg-white/[0.06] hover:text-text',
+    className
+  );
+  return (
+    <div className="relative">
+      {href ? (
+        <Link href={href} aria-label={label} className={cls} {...props}>
+          {children}
+        </Link>
+      ) : (
+        <button type="button" onClick={onClick} aria-label={label} className={cls} {...props}>
+          {children}
+        </button>
+      )}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md border border-line-strong bg-ink-800 px-2 py-1 text-xs font-medium text-text opacity-0 shadow-lg shadow-black/40 peer-hover:opacity-100 peer-focus-visible:opacity-100"
+      >
+        {label}
+      </span>
     </div>
   );
 }
@@ -301,32 +336,29 @@ export default function HistoryPanel({
       >
         {collapsed ? (
           <div className="flex h-full flex-col items-center gap-2 py-4">
-            <span className="mb-2 font-display text-xl font-bold text-gradient-brand" aria-label="unjargon.ai">u.</span>
-            <button
-              type="button"
-              onClick={() => setCollapsedPersist(false)}
-              aria-label="Expand sidebar"
-              aria-expanded="false"
-              className="grid size-10 place-items-center rounded-lg text-text-soft hover:bg-white/[0.06] hover:text-text"
+            <Link
+              href="/"
+              aria-label="unjargon.ai home"
+              className="mb-2 grid size-10 place-items-center rounded-lg hover:bg-white/[0.06]"
             >
+              <Image src="/icon.svg" alt="" width={26} height={26} className="size-[26px]" />
+            </Link>
+            <RailButton label="Expand sidebar" onClick={() => setCollapsedPersist(false)} aria-expanded="false">
               <PanelLeftOpen className="size-[18px]" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
+            </RailButton>
+            <RailButton
+              label="Start new chat"
               onClick={onNewChat}
-              aria-label="Start new chat"
-              className="grid size-10 place-items-center rounded-lg bg-white/[0.05] text-brand-cyan hover:bg-white/[0.1]"
+              className="bg-white/[0.05] text-brand-cyan hover:bg-white/[0.1] hover:text-brand-cyan"
             >
               <Plus className="size-[18px]" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setCollapsedPersist(false)}
-              aria-label="Show chat history"
-              className="grid size-10 place-items-center rounded-lg text-text-soft hover:bg-white/[0.06] hover:text-text"
-            >
+            </RailButton>
+            <RailButton label="About Unjargon" href="/about-us">
+              <Info className="size-[18px]" aria-hidden="true" />
+            </RailButton>
+            <RailButton label="Show chat history" onClick={() => setCollapsedPersist(false)}>
               <History className="size-[18px]" aria-hidden="true" />
-            </button>
+            </RailButton>
           </div>
         ) : (
           <PanelBody
